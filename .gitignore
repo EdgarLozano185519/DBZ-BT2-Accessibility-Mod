@@ -9,14 +9,15 @@ __pycache__/
 *.pyc
 .venv/
 
-# Never commit game content
+# Never commit game content, or anything derived from it. No negation rules
+# here: an exception like "!source/**/*.bin" silently re-admitted RAM dumps.
 *.iso
 *.chd
-*.bin
-!source/**/*.bin
-
-# Game-derived reference material (extracted text, RAM dumps, research captures).
-# Kept locally for development, never committed.
-/reference/
+*.cso
 *.afs
 *.pak
+*.bin
+
+# Extracted text, RAM snapshots and screenshots of the running game.
+# Deliberately not anchored, so it holds wherever a reference folder appears.
+reference/
