@@ -378,11 +378,40 @@ SPOKEN_COUNTS = {1: "Down", 2: "Down twice", 3: "Down three times",
                  4: "Down four times"}
 
 
+def _require_screen(client, name: str) -> bool:
+    """Refuse to capture unless the named screen is actually showing.
+
+    A capture session costs the player three minutes at the controls and
+    cannot be redone from disk.  Landing on the wrong screen used to produce a
+    capture that looked fine and analysed to nothing, with the mistake only
+    discovered afterwards.  The screen markers already exist; checking one up
+    front is nearly free.
+    """
+    from bt2.menus import SCREENS
+
+    screen = next((s for s in SCREENS if s.name.lower() == name.lower()), None)
+    if screen is None:
+        known = ", ".join(s.name for s in SCREENS)
+        print(f"No marker known for {name!r}. Known screens: {known}")
+        print("A screen with no marker must have one found before its cursor.")
+        return False
+    marker = bytes(
+        client.read8(screen.marker_address + offset)
+        for offset in range(len(screen.marker))
+    )
+    if marker == screen.marker:
+        return True
+    print(f"{screen.name} is not showing: {screen.marker_address:#010x} "
+          f"reads {marker!r}, expected {screen.marker!r}.")
+    return False
+
+
 def pressscan(
     samples: int = 18,
     interval: float = 2.0,
     lead: int = 25,
     seed: int = 20260906,
+    screen: str = "Main Menu",
 ) -> int:
     """Drive the cursor on a varying, spoken schedule and find what follows it.
 
@@ -413,10 +442,20 @@ def pressscan(
     schedule = [rng.choice((1, 1, 2, 2, 3, 4)) for _ in range(samples)]
 
     voice = Voice()
-    voice.countdown(lead, "Press scan. Go to the main menu now.")
+    client = PineClient(timeout=15.0)
+
+    # Check before the countdown, not after: telling the player they are on the
+    # wrong screen is only useful while they still have time to move.
+    voice.say(f"Press scan. Go to {screen} now, and stay there.")
+    voice.countdown(lead, "")
+    if not _require_screen(client, screen):
+        voice.say(f"Wrong screen. Expected {screen}. Nothing captured.")
+        voice.close()
+        client.close()
+        return 1
+    voice.say("Screen confirmed. Starting.")
 
     blocks: list[bytes] = []
-    client = PineClient(timeout=15.0)
     try:
         for index, presses in enumerate(schedule):
             voice.cue(SPOKEN_COUNTS[presses])
@@ -740,6 +779,7 @@ def main(argv: list[str]) -> int:
             samples, interval, "--quiet" not in argv, lead, cue
         )
     if command == "pressscan":
+        target = "Main Menu"
         samples, interval, lead = 18, 2.0, 25
         for argument in argv[2:]:
             if argument.startswith("--samples="):
@@ -748,7 +788,9 @@ def main(argv: list[str]) -> int:
                 interval = float(argument.split("=", 1)[1])
             elif argument.startswith("--lead="):
                 lead = int(argument.split("=", 1)[1])
-        return pressscan(samples, interval, lead)
+            elif argument.startswith("--screen="):
+                target = argument.split("=", 1)[1]
+        return pressscan(samples, interval, lead, screen=target)
     if command == "labels":
         address = int(argv[2], 16) if len(argv) > 2 else 0xAA12A8
         lead, expected = 30, 10
