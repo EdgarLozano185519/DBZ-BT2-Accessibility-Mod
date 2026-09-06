@@ -131,6 +131,46 @@ address cannot tell a correct read from a drifted one; two can. A disagreement
 is treated as "read again", not as "no such option" -- otherwise one unlucky
 frame would mute an option until the player navigated away and back.
 
+## Game Level: choosing a difficulty in Dragon Adventure
+
+Reached after picking a story event. Three boxes side by side reading 1, 2 and
+3, so it answers to **Left and Right**, not Up and Down. It opens on 2.
+
+- **Marker** -- `mc_da_5_lv_csr` at `0x00B1007B`. The screen's own cursor
+  sprite. Absent at that address on both the main menu and Options.
+- `0x00B054A8` (byte) -- **cursor index, 0 to 2**, plain, beside the marker.
+- `0x00432D71` (byte) -- the **same index times four**. Mirrored at
+  `0x00432D91`, and again at `0x00532DF1` / `0x00532E11`; the `+0x10` neighbours
+  of each carry the signal offset by four. The same static-mirror idiom as
+  Options, at a different stride.
+
+- `0` Level 1, `1` Level 2, `2` Level 3
+
+The labels are the digits on screen. The game calls this "Game Level" and its
+instruction line calls it the "Match level"; **nothing says easy, normal or
+hard**, so neither does the mod.
+
+Two lines of real text sit alongside, identical in all six captures:
+
+- `0x00D1A782` -- the event name, "Mysterious Alien Warrior".
+- `0x00D179C2` -- "Set the Match level to your strength. You can always adjust
+  it later!"
+
+Both are read on **F12**, not spoken automatically. They have been seen for
+**one story event only**, and a different event's name is a different length and
+may well sit elsewhere. Reading the wrong event name aloud would be exactly the
+confident error this project treats as worse than silence, so it stays behind a
+key press until it has been seen on more than one event.
+
+**Verified.** Six captures at screen positions confirmed from the screenshots
+rather than assumed -- 2, 1, 2, 3, 2, 1 -- left exactly nine surviving
+addresses, all nine of them index ramps, in the two families above. Read back
+live afterwards, correctly, on the same screen. **Not yet checked across a
+departure and return**, which is the standard this project holds cursors to.
+
+Note this screen sits *inside* Dragon Adventure. Menu reading runs whenever the
+Adventure HUD is absent, which is true here, so the two do not collide.
+
 ## Subtitles: the game's own words, in memory
 
 On-screen prose is held in EE RAM as verbatim UTF-16LE. This is the opposite of
@@ -268,6 +308,11 @@ never be committed.
 ## Known gaps
 
 - Dragon Library and every other submenu need cursor addresses.
+- The Game Level cursor has not been checked across leaving the screen and
+  coming back, and its two text addresses have been seen for one event only.
+- Other Dragon Adventure screens -- the event list this one is reached from --
+  are still unmapped. Whether they share `mc_da_5_lv_csr` is unknown, so the
+  Game Level marker could in principle match one of them.
 - Ultimate Battle Z and the rest are not detected at all.
 - Nothing reads the 2,601 story strings yet.
 - The subtitle block is relocated by shape, but only within

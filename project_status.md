@@ -15,6 +15,9 @@ Menus speak through NVDA, driven by the game's own memory:
 - **Options** -- all five entries, Save and Load through Exit. The game keeps
   two copies of this cursor and both are read; if they ever disagree the mod
   stays silent rather than guess.
+- **Game Level** -- the difficulty chooser inside Dragon Adventure, reached
+  after picking a story event. Levels 1, 2 and 3, chosen with Left and Right.
+  F12 reads the event name and the instruction line, both the game's own text.
 - **Screen detection** -- the announcer works out which screen is showing and
   picks the matching labels, or stays silent when it cannot.
 - **Menu subtitles on F12** -- the character's spoken line for the highlighted
@@ -100,6 +103,12 @@ Smaller, optional:
   session, where the interruptions are tiring.
 
 ## Recently finished
+
+- **Game Level speaks.** Found from a live session on the screen itself: a
+  screenshot gave the labels and layout, the screen's own cursor sprite gave a
+  marker, and six captures at visually confirmed positions gave the cursor. Two
+  copies of it, cross-checked, as with Options. Still owes a
+  leave-and-return check.
 
 - **Options speaks, all five entries.** Found by a press scan that matched five
   options and nothing else, then confirmed on a re-entry it was not derived

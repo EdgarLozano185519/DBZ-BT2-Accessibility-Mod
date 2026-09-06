@@ -51,7 +51,8 @@ class Screen:
     """A menu: how to recognise it, where its cursor is, what its rows say."""
 
     def __init__(self, name, marker_address, marker, cursor=None, stride=1,
-                 labels=None, subtitles=None, mirror=None, mirror_stride=1):
+                 labels=None, subtitles=None, mirror=None, mirror_stride=1,
+                 context=None):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -64,6 +65,11 @@ class Screen:
         # only if both agree -- see option().
         self.mirror = mirror
         self.mirror_stride = mirror_stride
+        # Prose the game is showing about this screen -- what is being chosen,
+        # rather than which option is highlighted. Read on F12, never spoken
+        # automatically: it is the game's own text, but where it lives has been
+        # confirmed for one story event only.
+        self.context = context
 
     @property
     def readable(self) -> bool:
@@ -208,6 +214,24 @@ SCREENS = [
         mirror=0x00532173, mirror_stride=2,
     ),
     Screen("Dragon Library", 0x00AB1FAF, b"mc_musicprogram_0"),
+    # The Game Level screen, reached after choosing a story event in Dragon
+    # Adventure. Three boxes side by side reading 1, 2, and 3, arranged
+    # horizontally, so it answers to Left and Right rather than Up and Down.
+    # It opens on 2.
+    #
+    # The labels are the digits the screen actually shows. The game calls this
+    # "Game Level" and the instruction line calls it the "Match level"; neither
+    # says easy, normal or hard, so neither does the mod.
+    #
+    # Same two-copy arrangement as Options: a plain count at 0x00B054A8, beside
+    # this screen's own sprite names, and the index times four at 0x00432D71 in
+    # static memory. Both are read and must agree.
+    Screen(
+        "Game Level", 0x00B1007B, b"mc_da_5_lv_csr", 0x00B054A8, 1,
+        {0: "Level 1", 1: "Level 2", 2: "Level 3"},
+        {0: 0x00D179C2, 1: 0x00D179C2, 2: 0x00D179C2},
+        mirror=0x00432D71, mirror_stride=4, context=0x00D1A782,
+    ),
 ]
 
 
@@ -328,6 +352,12 @@ class MenuReader:
             return
 
         line = self._read_line(pine, address)
+        if screen.context is not None:
+            about = self._read_line(pine, screen.context)
+            if about and line:
+                line = f"{about}. {line}"
+            elif about:
+                line = about
         if line is None:
             # The block has moved, which happens between emulator runs. Look
             # for it once rather than leaving F12 dead for the whole session.
