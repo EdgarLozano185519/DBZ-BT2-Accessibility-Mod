@@ -22,7 +22,9 @@ Menu reading is **part of the guide app**. `bt2/menus.py` runs inside the guide
 worker's main loop, at the one point where navigation guidance is suspended --
 outside Dragon Adventure, which is exactly when the player is in a menu. The two
 therefore never talk over one another. Press **F12** for the highlighted
-option's spoken line.
+option's spoken line. If the text block has moved since these notes were
+written, the mod says "Looking for the subtitles.", finds it again, and carries
+on.
 
 ## Running and building
 
@@ -89,14 +91,6 @@ Check the whole chain with `python pine_check.py`.
    system works. The one open question is how to tell which line is currently
    displayed, since a cutscene has no cursor. Needs one capture session inside a
    cutscene -- see the TODO in `docs/memory-map.md` for the method.
-4. **Find the subtitle block by content instead of by address.** The ten menu
-   subtitle addresses come from a single PCSX2 run and may move between runs.
-   Today every read is checked for plausible text and refused if it is not, so
-   the failure is a spoken "no subtitle available" rather than gibberish --
-   safe, but it means F12 can simply stop working after an emulator restart.
-   Searching for a known line at startup would fix that for good, and the same
-   search is what the cutscene work needs anyway.
-
 Smaller, optional:
 
 - The standalone `menu_announcer.py` still says "Unknown screen" on every screen
@@ -105,6 +99,14 @@ Smaller, optional:
   session, where the interruptions are tiring.
 
 ## Recently finished
+
+- **The subtitle block is found by shape, not by address.** The ten recorded
+  addresses came from one PCSX2 run and the block moves between runs, which
+  left F12 dead until the next rebuild. When a read stops looking like text the
+  mod now searches a narrow band for ten readable lines at the known spacing
+  and remembers the offset. No game text is hardcoded, so it is not tied to
+  English. Costs nothing on the happy path. **Tested against synthetic RAM
+  only** -- it has not yet met a real session where the block moved.
 
 - **The two announcement flaws are fixed** in the shipped path. "Unknown
   screen" now waits 1.5 seconds before speaking, so the gap between one screen

@@ -118,10 +118,23 @@ subtitle system, and cutscene subtitles are likely to use the same machinery.
 `ZS2US_2.AFS` holds over 4,000 `VIC-US-*` files, almost certainly those voice
 clips.
 
-**These addresses come from a single PCSX2 run** and the block may move between
-runs. Every read is therefore checked for plausible text before being spoken,
-and the mod says "no subtitle available" rather than reading whatever bytes are
-there. Finding the block by content at startup would be more robust.
+**These addresses come from a single PCSX2 run** and the block does move between
+runs. Every read is checked for plausible text before being spoken, so a moved
+block produces "no subtitle available" rather than gibberish.
+
+**The block is now found again by its shape.** When a recorded address stops
+reading as text, the mod searches `0x00C00000`-`0x00D00000` in half-megabyte
+steps for ten readable UTF-16LE lines at exactly the spacing above, and
+remembers the offset for the rest of the session. No line of game text is
+hardcoded, so nothing has to be transcribed and the search is not tied to
+English. Ten independent hits at fixed offsets is the selectivity: synthetic
+random RAM produces no match, and an empty region produces none either.
+
+The search reads about a megabyte and takes well under a second, but it is
+announced ("Looking for the subtitles.") because an unexplained pause is
+indistinguishable from a crash for a player who cannot see the screen. It runs
+only after a failed read, never on the happy path, and no more than once every
+twenty seconds.
 
 Note these menu lines are **not** among the 2,601 `TXT-US-*` story strings --
 zero matches. The game has at least two separate text sets, so reading RAM
@@ -225,9 +238,12 @@ never be committed.
 - Options, Dragon Library and every other submenu need cursor addresses.
 - Ultimate Battle Z and the rest are not detected at all.
 - Nothing reads the 2,601 story strings yet.
-- The subtitle addresses come from one PCSX2 run. If the block moves, F12 says
-  "no subtitle available" instead of speaking -- safe, but silent. Locating the
-  block by content at startup would fix it.
+- The subtitle block is relocated by shape, but only within
+  `0x00C00000`-`0x00D00000`. If it ever lands outside that band the search
+  misses it. Widening the band costs emulator time, so it should wait until a
+  real miss is observed rather than being widened speculatively.
+- Relocation has been tested against synthetic RAM only. It has not yet run
+  against a real PCSX2 session where the block actually moved.
 
 ## Fixed
 

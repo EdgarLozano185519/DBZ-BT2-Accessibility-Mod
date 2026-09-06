@@ -16,6 +16,11 @@ own table of sprite names -- Options is recognisable by the literal text
 "mc_icon_saveload".  A readable marker beats a state number, which can only be
 trusted rather than checked.
 
+The subtitle addresses were recorded in one PCSX2 run and the block moves
+between runs, so they are treated as a starting guess rather than a fact.  When
+they stop reading as text the block is found again by its shape -- ten lines at
+known spacing -- and the offset is remembered for the session.
+
 Addresses and their evidence are recorded in docs/memory-map.md.
 """
 
@@ -26,6 +31,17 @@ import ctypes
 from .hotkeys import desktop_input_allowed
 
 MAX_SUBTITLE_BYTES = 400
+
+# The band the subtitle block has been seen in, searched in bounded steps.
+# Reading all 32 MiB starves the emulator (see scan.py), so the search is
+# deliberately narrow and only runs when the recorded addresses have failed.
+SUBTITLE_SEARCH_START = 0x00C00000
+SUBTITLE_SEARCH_END = 0x00D00000
+SUBTITLE_SEARCH_STEP = 0x80000
+# Searching costs the player a pause, so never repeat it faster than this.
+SUBTITLE_SEARCH_INTERVAL = 20.0
+# A line long enough that ten of them at fixed spacing cannot be chance.
+MIN_ANCHOR_CHARACTERS = 8
 
 # PCSX2 binds F1 to F6, F8 and F9. F12 is unbound, so the mod can claim it.
 VK_F12 = 0x7B
@@ -82,6 +98,56 @@ def read_subtitle(pine, address: int) -> str | None:
     return text or None
 
 
+def _text_at(block: bytes, offset: int) -> str | None:
+    """Decode a null-terminated UTF-16LE line out of an already-read block."""
+    characters = []
+    limit = min(offset + MAX_SUBTITLE_BYTES, len(block) - 1)
+    for position in range(offset, limit, 2):
+        low, high = block[position], block[position + 1]
+        if low == 0 and high == 0:
+            break
+        if high != 0 or not (low in (10, 13) or 32 <= low < 127):
+            return None
+        characters.append(chr(low))
+    text = " ".join("".join(characters).split())
+    return text or None
+
+
+def find_subtitle_shift(pine, screen) -> int | None:
+    """Find how far a screen's subtitle block has moved, by its shape.
+
+    No line of the game's text is hardcoded here, so nothing has to be
+    transcribed and nothing breaks in another language.  What is recognised
+    instead is the arrangement: ten readable lines at exactly the spacing the
+    recorded addresses describe.  Ten independent hits at fixed offsets is far
+    more selective than any single string would be, and a wrong match would
+    have to reproduce the whole layout by accident.
+
+    Returns the offset to add to the recorded addresses, or None.
+    """
+    addresses = [screen.subtitles[key] for key in sorted(screen.subtitles)]
+    if len(addresses) < 2:
+        return None
+    base = addresses[0]
+    offsets = [address - base for address in addresses]
+    span = offsets[-1] + MAX_SUBTITLE_BYTES
+
+    for window in range(SUBTITLE_SEARCH_START, SUBTITLE_SEARCH_END,
+                        SUBTITLE_SEARCH_STEP):
+        size = SUBTITLE_SEARCH_STEP + span
+        try:
+            block = pine.read_aligned_range(window, size + (-size % 8))
+        except Exception:
+            return None
+        for start in range(0, SUBTITLE_SEARCH_STEP, 2):
+            first = _text_at(block, start)
+            if first is None or len(first) < MIN_ANCHOR_CHARACTERS:
+                continue
+            if all(_text_at(block, start + offset) for offset in offsets[1:]):
+                return window + start - base
+    return None
+
+
 SCREENS = [
     Screen(
         "Main Menu", 0x00AA15EC, b"mc_menu_lineanim", 0x00AA12A8, 1,
@@ -124,6 +190,11 @@ class MenuReader:
         self._settled: int | None = None
         self._unknown_since: float | None = None
         self._announced_unknown = False
+        # How far the subtitle block has moved from the recorded addresses.
+        # Zero until proven otherwise: the recorded addresses are right in the
+        # run they came from, and searching costs the player a pause.
+        self._subtitle_shift = 0
+        self._last_subtitle_search = 0.0
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
         self._user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
         self._user32.GetAsyncKeyState.restype = ctypes.c_short
@@ -174,7 +245,7 @@ class MenuReader:
             return
 
         if self._subtitle_pressed():
-            self._speak_subtitle(pine)
+            self._speak_subtitle(pine, now)
         if not self.screen.readable:
             return
 
@@ -202,17 +273,50 @@ class MenuReader:
             self._spoken = label
             self.speaker.say(label)
 
-    def _speak_subtitle(self, pine) -> None:
-        line = None
+    def _speak_subtitle(self, pine, now: float) -> None:
         screen = self.screen
-        if screen is not None and screen.subtitles and screen.readable:
-            try:
-                raw = pine.read8(screen.cursor)
-                address = screen.subtitles.get(raw // screen.stride)
-                line = read_subtitle(pine, address) if address else None
-            except Exception:
-                line = None
+        if screen is None or not screen.subtitles or not screen.readable:
+            self.speaker.say("No subtitle available.")
+            return
+        try:
+            raw = pine.read8(screen.cursor)
+            address = screen.subtitles.get(raw // screen.stride)
+        except Exception:
+            address = None
+        if address is None:
+            self.speaker.say("No subtitle available.")
+            return
+
+        line = self._read_line(pine, address)
+        if line is None:
+            # The block has moved, which happens between emulator runs. Look
+            # for it once rather than leaving F12 dead for the whole session.
+            line = self._relocate_and_read(pine, screen, address, now)
         self.speaker.say(line or "No subtitle available.")
+
+    def _read_line(self, pine, address: int) -> str | None:
+        try:
+            return read_subtitle(pine, address + self._subtitle_shift)
+        except Exception:
+            return None
+
+    def _relocate_and_read(self, pine, screen, address: int,
+                           now: float) -> str | None:
+        if now - self._last_subtitle_search < SUBTITLE_SEARCH_INTERVAL:
+            return None
+        self._last_subtitle_search = now
+        # The search reads a few megabytes and takes a moment. Say so, because
+        # for a player who cannot see the screen an unexplained pause is
+        # indistinguishable from the mod having crashed.
+        self.speaker.say("Looking for the subtitles.")
+        try:
+            shift = find_subtitle_shift(pine, screen)
+        except Exception:
+            shift = None
+        if shift is None:
+            return None
+        self._subtitle_shift = shift
+        return self._read_line(pine, address)
 
     def suspend(self) -> None:
         """Forget the current screen so returning to it announces again."""
