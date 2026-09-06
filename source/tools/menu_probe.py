@@ -266,7 +266,9 @@ def _group_by_label(crops: list) -> list[int]:
     return groups
 
 
-def autoscan(samples: int = 8, interval: float = 4.0) -> int:
+def autoscan(
+    samples: int = 8, interval: float = 4.0, voice_enabled: bool = True
+) -> int:
     """Capture RAM and screen together, then correlate them without help.
 
     This exists because driving the search by hand does not survive contact
@@ -277,13 +279,23 @@ def autoscan(samples: int = 8, interval: float = 4.0) -> int:
     """
     STORE.mkdir(parents=True, exist_ok=True)
     from bt2 import vision
+    from probe_voice import Voice
 
     blocks: list[bytes] = []
     crops = []
 
+    voice = Voice(enabled=voice_enabled)
+    voice.countdown(
+        5, f"Auto scan. {samples} samples. Switch to the game now."
+    )
+
     client = PineClient(timeout=15.0)
     try:
         for index in range(samples):
+            # Cue first, then leave a beat for the press to land before the
+            # screen and RAM are captured together.
+            voice.cue("Down")
+            time.sleep(interval)
             image = vision.capture_game_window()
             chunks = []
             for chunk_address in range(DEFAULT_BASE, FULL_END, CHUNK_BYTES):
@@ -303,10 +315,13 @@ def autoscan(samples: int = 8, interval: float = 4.0) -> int:
             (STORE / f"auto{index}.bin").write_bytes(block)
             image.save(STORE / f"auto{index}.png")
             print(f"  sample {index} captured")
-            if index < samples - 1:
-                time.sleep(interval)
+            # Progress occasionally rather than every sample: a count after
+            # each press would talk over the next cue.
+            if (index + 1) % 5 == 0 and index + 1 < samples:
+                voice.cue(f"{index + 1} of {samples}")
     finally:
         client.close()
+        voice.say("Capture finished. Analysing.")
 
     groups = _group_by_label(crops)
     print(f"\nScreen showed {len(set(groups))} distinct label(s) across "
@@ -331,12 +346,28 @@ def autoscan(samples: int = 8, interval: float = 4.0) -> int:
     kept_groups = [groups[i] for i in keep]
     if len(set(kept_groups)) < 2:
         print("\nFewer than two options were on screen often enough to compare.")
-        print("Re-run while pressing down steadily -- that also stops the")
-        print("attract demo from starting.")
+        voice.say("Only one option seen. Another run needed, pressing down more "
+                  "often.")
+        voice.close()
         return 1
 
     print()
-    return _correlate([blocks[i] for i in keep], kept_groups)
+    found = _correlate([blocks[i] for i in keep], kept_groups)
+
+    # Say the outcome and the next action, so the player learns the result
+    # without leaving the game to read a terminal.
+    options = len(set(kept_groups))
+    if not found:
+        voice.say(f"{options} options seen, but no address matched. "
+                  "Another run needed.")
+    elif len(found) <= 8:
+        voice.say(f"Found it. {len(found)} addresses across {options} options. "
+                  "Nothing more needed.")
+    else:
+        voice.say(f"{len(found)} candidates across {options} options. "
+                  "Another run would narrow it.")
+    voice.close()
+    return 0 if found else 1
 
 
 def recorrelate() -> int:
@@ -363,11 +394,16 @@ def recorrelate() -> int:
         print("Fewer than two options appear often enough to compare.")
         return 1
     print()
-    return _correlate([blocks[i] for i in keep], kept_groups)
+    return 0 if _correlate([blocks[i] for i in keep], kept_groups) else 1
 
 
-def _correlate(blocks: list[bytes], groups: list[int], limit: int = 30) -> int:
-    """Report addresses that are constant per group and differ between groups."""
+def _correlate(
+    blocks: list[bytes], groups: list[int], limit: int = 30
+) -> dict[int, list[int]]:
+    """Report addresses that are constant per group and differ between groups.
+
+    Returns the matches so a caller can summarise them aloud.
+    """
     interpretations = [_views(block) for block in blocks]
     widths = {"u8": 1, "u16": 2, "u32": 4}
     found: dict[int, list[int]] = {}
@@ -397,14 +433,14 @@ def _correlate(blocks: list[bytes], groups: list[int], limit: int = 30) -> int:
 
     if not found:
         print("No address tracked the on-screen label.")
-        return 1
+        return found
 
     print(f"Addresses tracking the label: {len(found)}")
     for address, values in sorted(found.items())[:limit]:
         print(f"    0x{address:08X}  values: {values}")
     if len(found) > limit:
         print(f"    ... and {len(found) - limit} more")
-    return 0
+    return found
 
 
 def watch(addresses: list[int], seconds: float = 20.0, period: float = 0.1) -> int:
@@ -478,7 +514,7 @@ def main(argv: list[str]) -> int:
                 samples = int(argument.split("=", 1)[1])
             elif argument.startswith("--interval="):
                 interval = float(argument.split("=", 1)[1])
-        return autoscan(samples, interval)
+        return autoscan(samples, interval, voice_enabled="--quiet" not in argv)
     if command == "recorrelate":
         return recorrelate()
     if command == "watch":
