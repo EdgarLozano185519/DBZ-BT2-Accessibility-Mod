@@ -88,6 +88,75 @@ SCREENS = [
     Screen("Dragon Library", 0x00AB1FAF, b"mc_musicprogram_0"),
 ]
 
+# The character's spoken line for each main menu option, as UTF-16 text the
+# game itself holds -- unlike the option names, which are artwork. Announced on
+# F12 rather than automatically: it is flavour a sighted player can ignore while
+# browsing, and reading it on every move would slow navigation down.
+#
+# These addresses come from one PCSX2 run. The block could move between runs, so
+# every read is checked for plausible text before anything is spoken.
+MAIN_MENU_SUBTITLES = {
+    0: 0x00CA9A42, 1: 0x00CA9B02, 2: 0x00CA9B82, 3: 0x00CA9C02, 4: 0x00CA9CC2,
+    5: 0x00CA9D42, 6: 0x00CA9E02, 7: 0x00CA9EC2, 8: 0x00CA9F42, 9: 0x00CA9FC2,
+}
+
+# PCSX2 binds F1 to F6, F8 and F9; F12 is unbound, so it is free for the mod.
+VK_F12 = 0x7B
+
+MAX_SUBTITLE_BYTES = 400
+
+
+def read_utf16(client: PineClient, address: int) -> str | None:
+    """Read a null-terminated UTF-16LE string, or None if it is not text.
+
+    The address is only as good as the run it was found in, so this refuses
+    anything that does not look like a sentence rather than speaking whatever
+    bytes happen to be there.
+    """
+    raw = bytearray()
+    for offset in range(0, MAX_SUBTITLE_BYTES, 2):
+        low = client.read8(address + offset)
+        high = client.read8(address + offset + 1)
+        if low == 0 and high == 0:
+            break
+        if high != 0 or not (low in (10, 13) or 32 <= low < 127):
+            return None  # Not plain text: the block has moved, or this is data.
+        raw.append(low)
+    text = raw.decode("ascii", "replace").replace("\n", " ").replace("\r", " ")
+    text = " ".join(text.split())
+    return text if len(text) >= 4 else None
+
+
+class Hotkey:
+    """Edge-triggered global key, live only while the game has focus.
+
+    Matches the pattern in bt2/hotkeys.py: the mod must not react to a key the
+    player pressed into some other window.
+    """
+
+    def __init__(self, key: int):
+        import ctypes
+
+        self.key = key
+        self.user32 = ctypes.WinDLL("user32", use_last_error=True)
+        self.user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
+        self.user32.GetAsyncKeyState.restype = ctypes.c_short
+        self.down = False
+
+    def pressed(self) -> bool:
+        down = bool(self.user32.GetAsyncKeyState(self.key) & 0x8000)
+        fired = down and not self.down
+        self.down = down
+        if not fired:
+            return False
+        try:
+            from bt2.windows import game_has_focus
+
+            return game_has_focus()
+        except Exception:
+            return True
+
+
 POLL_SECONDS = 0.05
 
 
@@ -116,7 +185,9 @@ def main(seconds: float) -> int:
     pending: int | None = None
     settled: int | None = None
 
-    print("Reading menus. Move around; Ctrl+C to stop.\n")
+    subtitle_key = Hotkey(VK_F12)
+
+    print("Reading menus. Move around; F12 for the spoken line; Ctrl+C to stop.\n")
     speaker.say("Menu reader ready.")
     try:
         deadline = time.monotonic() + seconds
@@ -131,10 +202,26 @@ def main(seconds: float) -> int:
                 if screen is not None and screen.cursor is None:
                     print("  (options here are not mapped yet, staying silent)")
             if screen is None or screen.cursor is None:
+                subtitle_key.pressed()  # Keep the edge state fresh while idle.
                 time.sleep(0.2)
                 continue
 
             raw = client.read8(screen.cursor)
+
+            if subtitle_key.pressed():
+                address = (
+                    MAIN_MENU_SUBTITLES.get(raw)
+                    if screen.name == "Main Menu" else None
+                )
+                line = read_utf16(client, address) if address else None
+                if line:
+                    print(f"  [F12] {line}")
+                    speaker.say(line)
+                else:
+                    # Either this screen has no subtitles mapped, or the text
+                    # block has moved since these addresses were recorded.
+                    print("  [F12] no subtitle available")
+                    speaker.say("No subtitle available.")
             # Require a value to repeat before trusting it: a read can land
             # while the game is updating the cursor, and announcing that
             # half-written state would speak an option never shown.

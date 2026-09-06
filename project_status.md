@@ -14,6 +14,9 @@ Menus speak through NVDA, driven by the game's own memory:
 - **Main Menu** -- all ten options, Dragon Adventure through Dragon Library.
 - **Screen detection** -- the announcer works out which screen is showing and
   picks the matching labels, or stays silent when it cannot.
+- **Menu subtitles on F12** -- the character's spoken line for the highlighted
+  main menu option, read as the game's own text rather than from a table we
+  wrote. On a key press only, so it does not slow down browsing.
 
 Run it with the project virtual environment, from `source/tools`:
 
@@ -46,10 +49,12 @@ Check the whole chain with `python pine_check.py`.
 2. **Map more screens.** Options' labels are known but its cursor address is
    not. Dragon Library is detected only. Ultimate Battle Z and the rest are not
    detected at all. Use `menu_probe.py pressscan`, then `labels`.
-3. **Read story text.** The 2,601 English strings in `TXT-US-*` inside
-   `ZS2US_1.AFS` are real UTF-16LE text, extractable offline. This is the
-   largest untouched win and needs no reverse engineering -- only finding which
-   string is on screen.
+3. **Dragon Adventure story subtitles.** The largest untouched win. Story text
+   is real UTF-16LE in `TXT-US-*` inside `ZS2US_1.AFS`, on-screen prose is
+   demonstrably readable from RAM, and the menu subtitles prove the subtitle
+   system works. The one open question is how to tell which line is currently
+   displayed, since a cutscene has no cursor. Needs one capture session inside a
+   cutscene -- see the TODO in `docs/memory-map.md` for the method.
 4. **Integrate.** Fold the announcer into the guide proper so it runs alongside
    the existing Dragon Adventure navigation rather than as a separate script.
 

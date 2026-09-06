@@ -95,6 +95,59 @@ labels read off screen.
 **Verified** by a live walk of the whole menu four times over with no wrong
 label and no gaps.
 
+## Subtitles: the game's own words, in memory
+
+On-screen prose is held in EE RAM as verbatim UTF-16LE. This is the opposite of
+the menu labels: no table has to be authored, because the game's own text can be
+read directly. Announced on **F12** (unbound in PCSX2; it binds F1-F6, F8, F9).
+
+The main menu's ten spoken lines sit in cursor order:
+
+- `0x00CA9A42` Dragon Adventure, `0x00CA9B02` Ultimate Battle Z,
+  `0x00CA9B82` Dragon Tournament, `0x00CA9C02` Dueling,
+  `0x00CA9CC2` Ultimate Training, `0x00CA9D42` Evolution Z,
+  `0x00CA9E02` Item Shop, `0x00CA9EC2` Data Center, `0x00CA9F42` Options,
+  `0x00CA9FC2` Dragon Library
+
+Verified by matching three of them against captures whose cursor value was
+known. The same block also holds the boot health warnings and the title text.
+
+These lines are **subtitles for voiced character dialogue** -- the player
+identified this from hearing them. That matters: it means the game has a working
+subtitle system, and cutscene subtitles are likely to use the same machinery.
+`ZS2US_2.AFS` holds over 4,000 `VIC-US-*` files, almost certainly those voice
+clips.
+
+**These addresses come from a single PCSX2 run** and the block may move between
+runs. Every read is therefore checked for plausible text before being spoken,
+and the mod says "no subtitle available" rather than reading whatever bytes are
+there. Finding the block by content at startup would be more robust.
+
+Note these menu lines are **not** among the 2,601 `TXT-US-*` story strings --
+zero matches. The game has at least two separate text sets, so reading RAM
+covers text the offline extraction misses entirely.
+
+## TODO: Dragon Adventure story subtitles
+
+The largest remaining feature, and the reason the text work matters.
+
+**What is known.** Story text exists as 2,601 real UTF-16LE strings in
+`TXT-US-*` inside `ZS2US_1.AFS`, extractable offline. On-screen prose is
+demonstrably readable from RAM. The subtitle system demonstrably works.
+
+**What is not known.** How to tell which line is *currently* displayed. On a
+menu the cursor gives that away free; in a cutscene lines advance on their own
+and there is no cursor. A search of four menu captures found no stable pointer
+to the displayed string, so the menus appear to render by index into a block.
+Cutscenes may well differ, since they must show arbitrary lines in sequence.
+
+**How to settle it.** One capture session inside a Dragon Adventure cutscene:
+capture RAM at several points as dialogue advances, then find the region whose
+contents change to a *different known corpus string* each time. The extracted
+corpus is the filter that makes this tractable -- "is this an actual line of
+game dialogue" is far more selective than "did these bytes change". Re-extract
+the corpus from the ISO with the ISO9660 and AFS parsing described below.
+
 ## Screens seen but not mapped
 
 - **Options** -- a vertical list, not a carousel: Save/Load, Controller, Screen,
