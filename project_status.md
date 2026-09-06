@@ -73,22 +73,47 @@ Check the whole chain with `python pine_check.py`.
 
 ## Next steps, roughly in order
 
-1. **Fix two known announcement flaws** (both in `docs/memory-map.md` under
-   Known gaps): "Unknown screen" is spoken on every screen *transition* rather
-   than only on genuinely unmapped screens, and the first option can be
-   announced spuriously on re-entering a screen because the cursor briefly
-   reads 0. Both need a settling delay.
-2. **Map more screens.** Options' labels are known but its cursor address is
-   not. Dragon Library is detected only. Ultimate Battle Z and the rest are not
-   detected at all. Use `menu_probe.py pressscan`, then `labels`.
+1. **Map more screens.** This is the next real work. Options' labels are known
+   but its cursor address is not. Dragon Library is detected only. Ultimate
+   Battle Z and the rest are not detected at all, so the announcer names them
+   "Unknown screen" -- correct, but not useful. Use `menu_probe.py pressscan`
+   to find each cursor, then `labels` to write the table from what was actually
+   on screen.
+2. **Re-verify the Options and Dragon Library markers.** Both rest on a single
+   visit each, unlike the main menu's, which held across nineteen captures. A
+   marker that shifts between visits would make the announcer name the wrong
+   screen. Cheap to check: visit each twice in separate PCSX2 runs.
 3. **Dragon Adventure story subtitles.** The largest untouched win. Story text
    is real UTF-16LE in `TXT-US-*` inside `ZS2US_1.AFS`, on-screen prose is
    demonstrably readable from RAM, and the menu subtitles prove the subtitle
    system works. The one open question is how to tell which line is currently
    displayed, since a cutscene has no cursor. Needs one capture session inside a
    cutscene -- see the TODO in `docs/memory-map.md` for the method.
-4. **Integrate.** Fold the announcer into the guide proper so it runs alongside
-   the existing Dragon Adventure navigation rather than as a separate script.
+4. **Find the subtitle block by content instead of by address.** The ten menu
+   subtitle addresses come from a single PCSX2 run and may move between runs.
+   Today every read is checked for plausible text and refused if it is not, so
+   the failure is a spoken "no subtitle available" rather than gibberish --
+   safe, but it means F12 can simply stop working after an emulator restart.
+   Searching for a known line at startup would fix that for good, and the same
+   search is what the cutscene work needs anyway.
+
+Smaller, optional:
+
+- The standalone `menu_announcer.py` still says "Unknown screen" on every screen
+  transition. The shipped `bt2/menus.py` no longer does. The standalone is a
+  development tool, so this only matters if it is used for a long probing
+  session, where the interruptions are tiring.
+
+## Recently finished
+
+- **The two announcement flaws are fixed** in the shipped path. "Unknown
+  screen" now waits 1.5 seconds before speaking, so the gap between one screen
+  unloading and the next loading passes silently. The cursor must read the same
+  value twice before it is trusted, so the spurious first option on re-entering
+  a screen is gone.
+- **The announcer is integrated.** `bt2/menus.py` runs inside the guide
+  worker's loop rather than as a separate script, and the worker in `worker/`
+  is built from it.
 
 ## Working notes
 

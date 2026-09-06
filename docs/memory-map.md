@@ -224,10 +224,19 @@ never be committed.
 
 - Options, Dragon Library and every other submenu need cursor addresses.
 - Ultimate Battle Z and the rest are not detected at all.
-- The announcer says "Unknown screen" on every screen *transition*, not only on
-  genuinely unmapped screens, because no marker matches while one screen is
-  unloading and the next has not loaded. It needs a delay before speaking that.
-- On re-entering a screen the cursor briefly reads 0, so the first option can be
-  announced spuriously before the correct one. The cursor needs a moment to
-  settle after a screen change.
 - Nothing reads the 2,601 story strings yet.
+- The subtitle addresses come from one PCSX2 run. If the block moves, F12 says
+  "no subtitle available" instead of speaking -- safe, but silent. Locating the
+  block by content at startup would fix it.
+
+## Fixed
+
+- **"Unknown screen" on every transition.** No marker matches while one screen
+  is unloading and the next has not loaded, so the announcer spoke on every
+  navigation. `bt2/menus.py` now waits 1.5 seconds before saying it, which the
+  gap never lasts. The standalone `menu_announcer.py` still has the old
+  behaviour; it is a development tool.
+- **A spurious first option on re-entry.** The cursor briefly reads 0 after a
+  screen change. `bt2/menus.py` now requires a value to repeat across two polls
+  before trusting it, so the half-written state is never spoken. Both the
+  shipped module and the standalone announcer do this.
