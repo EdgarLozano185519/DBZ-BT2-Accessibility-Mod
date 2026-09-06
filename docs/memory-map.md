@@ -1,86 +1,180 @@
 # DBZ BT2 memory map (SLUS-21441, CRC FE961D28)
 
 Addresses are PS2 EE physical addresses, read over PCSX2's PINE link. Every
-entry here was confirmed against the running game, never inferred. Each one
-records how it was verified so a later reader can judge it.
+entry records how it was verified. Nothing here is inferred from one screen or
+one snapshot without saying so.
+
+Tested against PCSX2 2.9.32. The guide's own docs cite 2.6.3.
 
 ## Why the mod reads indices, not text
 
-The game's menu labels are **pre-rendered artwork, not strings**. Verified from
-the disc image:
+BT2's menu labels are **pre-rendered artwork, not strings**. Verified from the
+disc image:
 
 - `SLUS_214.41` contains no English UI text in ASCII or UTF-16.
 - The UI archives in `ZS2US_2.AFS` (`Menu.pak`, `Title.pak`, `Option.pak`,
-  `DAdventure.pak`, `UBattle.pak`, `IShop.pak`, `DCenter.pak`, …) contain no
-  readable strings at all.
-- The executable instead holds sprite names indexed by number:
-  `mc_item_name_%d`, `mc_chara_plate_%d_e`, `mc_title_text`,
-  `mc_dummy_rule_text%d`.
+  `DAdventure.pak`, `UBattle.pak`, `IShop.pak`, `DCenter.pak`, `DLibrary.pak`,
+  `EZ.pak`, `Duel.pak`, `DTournament.pak`) contain no readable strings at all.
+  Their byte entropy is 6.85 bits with ~11% zeros, which looks like raw texture
+  data rather than compression. They were not decompressed, so this is strong
+  inference, not proof.
+- The executable holds sprite names indexed by number instead:
+  `mc_item_name_%d`, `mc_chara_plate_%d_e`, `mc_title_text`.
 
-So there is nothing in memory spelling "New Game". What the game keeps is the
-*index* of the highlighted option, which is what these addresses hold. Spoken
-labels have to come from our own table keyed by that index.
+So nothing in memory spells "Dragon Adventure". The game keeps the *index* of
+the highlighted option; the words must come from our own table. Those tables in
+`source/tools/menu_announcer.py` are the only place the text exists, and the
+only thing that can ever be translated.
 
-Story and tutorial text is the exception: it *is* real UTF-16LE text, in the
-553 `TXT-US-*` files inside `ZS2US_1.AFS` (2,601 strings). That is a separate
-route, still to be built.
+**Story and tutorial text is the exception.** It is real UTF-16LE text in the
+553 `TXT-US-*` files inside `ZS2US_1.AFS` -- 2,601 strings of cutscene
+dialogue, narration and tutorials. Extractable offline from the ISO. Nothing
+has been built on this yet; it is the obvious next feature.
 
-## Title screen: New Game / Load Game spinner
+## Screen identification
 
-A one-at-a-time spinner cycled with up and down. Two options.
+Each menu reuses the same memory for its own purposes, so a cursor address is
+meaningless unless the right screen is up. `0x00AA12A8` is the main menu cursor,
+but on Options the same byte reads 163 and on Dragon Library 208. Reading it
+blindly names options at random.
 
-- `0x00533A73` (byte) — **cursor index x 2**. `0` = New Game, `2` = Load Game.
-- `0x00533A83` (byte) — mirror, identical values.
-- `0x00533A93` and `0x00533AA3` (bytes) — same signal offset by two: `2` = New
-  Game, `4` = Load Game.
+Screens identify themselves: each loads its own table of sprite names into the
+dynamic region around `0x00A00000`. Detection reads a short string at a fixed
+address.
 
-The stride-2 encoding is unexplained so far. It may be a byte offset into a
-table of 16-bit entries, or a sprite id. Confirming that needs a menu with more
-than two options; do not assume `index * 2` generalises until then.
+- **Main Menu** -- `mc_menu_lineanime` at `0x00AA15EC`
+- **Options** -- `mc_icon_saveload` at `0x00AFCF85`
+- **Dragon Library** -- `mc_musicprogram_0` at `0x00AB1FAF`
+- **Title** -- no unique sprite name; identified by the 12-byte signature
+  `01 80 00 00 00 00 00 C4 E1 06 53 53` at `0x00533D60`
 
-**Verification.** Fourteen paired captures of full EE RAM and the game window,
-grouped by the label's pixels (`menu_probe.py autoscan`). `0x00533A73` matched
-the on-screen option in all 14, including the two frames where the attract demo
-had cut in. A live re-test with a stability guard -- reading the address either
-side of each screen capture and discarding frames caught mid-change -- agreed on
-16 of 17 stable frames. The single outlier read a stable 0 while the capture
-showed Load Game, with a transition detected two samples later, consistent with
-`PrintWindow` returning a stale frame.
+Match markers as a **prefix**. The main menu's name is `mc_menu_lineanime`; an
+exact comparison against a 16-byte window clipped the trailing "e" and failed.
 
-**Ruled out.** `0x00533FF0` and `0x00534030` survived an early five-snapshot
-search and looked convincing -- stable, and correct whenever checked by hand --
-but disagreed with the screen on samples 3 and 4 of the autoscan. They are not
-the cursor. `0x00AA1290` and `0x00AA56F0` failed the same way. Coincidence
-across a handful of snapshots is easy in 31 MB; only the paired screen-and-RAM
-correlation settled it.
+A readable marker beats a state number because it can be checked rather than
+trusted. Note the static string table at `0x00428280` holds these same names on
+*every* screen -- only the copies in the dynamic region are screen-specific.
 
-**Known gap.** During the attract demo `0x00533A73` also reads `0`, so this
-address alone cannot tell "New Game is selected" from "the demo is playing".
-A separate screen-state indicator is needed before anything is announced --
-otherwise the mod will happily say "New Game" over a cut-scene.
+**Confidence.** The main menu marker held the same address across 19 captures
+and survived a full out-and-back transition. Options and Dragon Library rest on
+a **single visit each**; their addresses could shift between visits and have not
+been re-verified.
+
+## Title screen: New Game / Load Game
+
+- `0x00533A73` (byte) -- **cursor index x 2**. `0` = New Game, `2` = Load Game.
+  Mirrored at `0x00533A83`. `0x00533A93` / `0x00533AA3` carry the same signal
+  offset by two.
+
+Why the stride is two is **unknown**. The main menu does not do it, so stride is
+per-screen and must not be generalised.
+
+**Verified** across 14 paired screen-and-RAM captures, plus 16 of 17 live frames
+with a stability guard. The single outlier is consistent with `PrintWindow`
+returning a stale frame.
+
+## Main Menu: ten options
+
+- `0x00AA12A8` (byte) -- **cursor index, 0 to 9**, plain, no stride. Mirrored at
+  `0x00CF9C34`.
+
+- `0` Dragon Adventure (the story mode)
+- `1` Ultimate Battle Z
+- `2` Dragon Tournament
+- `3` Dueling
+- `4` Ultimate Training
+- `5` Evolution Z
+- `6` Item Shop
+- `7` Data Center
+- `8` Options
+- `9` Dragon Library
+
+Seven of these correspond to `.pak` archives on the disc, which corroborates the
+labels read off screen.
+
+**Verified** by a live walk of the whole menu four times over with no wrong
+label and no gaps.
+
+## Screens seen but not mapped
+
+- **Options** -- a vertical list, not a carousel: Save/Load, Controller, Screen,
+  Sound, EXIT. Labels read from a screenshot and independently corroborated by
+  its sprite names (`mc_icon_saveload`, `mc_icon_controller`, `mc_icon_screen`,
+  `mc_icon_sound`). **Cursor address not found.**
+- **Dragon Library** -- detected only.
+- **Ultimate Battle Z** -- not detected at all. The announcer correctly says
+  "Unknown screen" there, which is the intended behaviour: naming a screen it
+  cannot read would be worse than admitting it.
+
+## Dead ends -- do not re-tread
+
+- **`0x00533FF0` and `0x00534030`** survived a five-snapshot search of the title
+  screen, were stable, and were correct under every manual spot check. They
+  disagreed with the screen on two autoscan samples. Not the cursor.
+  Coincidence is cheap across a handful of snapshots of 31 MB.
+- **`0x00AA1290`, `0x00AA56F0`** failed the same way.
+- **`0x0034F000`** looked like a perfect screen enum -- a clean 32-bit word,
+  the *only* survivor across title, main and Options, predicting 14 on Options
+  exactly. It then failed the first transition it had not been derived from: it
+  still read 14 after returning to the main menu. It is sticky, probably "last
+  submenu entered". **Any candidate must be tested on a transition it was not
+  derived from.**
+- **Grouping frames by pixels** is exact on the title screen (same option 0.00
+  apart, different options 21.41, tolerance 4.0) and **useless on the main
+  menu**, whose clouds, characters and flavour text animate continuously. No
+  region of the screen separated options; the best 10% band managed a ratio of
+  1.16. A yellow-text mask was worse, at 0.5, because the carousel slides.
+- **A uniform press schedule** is periodic, so every animation counter whose
+  cycle divides the sample count fits it as well as the cursor does -- 32,840
+  matches. Vary the press count instead.
+- **Pak names in RAM.** Only `zs2us_1.afs` and `zs2us_2.afs` appear. Individual
+  paks are loaded by index; `Menu.pak` never appears as text.
+- **Assuming a screen enum is a clean 32-bit word.** Filtering on that left zero
+  candidates once the return-to-main constraint was added. The real identifier
+  was a string, not an integer.
+- **Two screens cannot identify a screen.** A blind diff over title and main
+  gave 210,051 candidates; adding Options gave 3,178; four screens with a
+  return-visit constraint still left 552.
 
 ## Method
 
-`source/tools/menu_probe.py` is the tool used above.
+`source/tools/menu_probe.py`:
 
-- `snap NAME` / `find A B C --sequence=0,1,0` — snapshot RAM by hand and search
-  for a value sequence. Workable, but every pause to confirm what is on screen
-  is a pause the attract demo can interrupt.
-- `autoscan --samples=N --interval=S` — **preferred.** Captures RAM and the
-  screen together while the player moves the cursor freely, groups the samples
-  by the label's pixels, and reports which addresses track those groups. No
-  turn-by-turn coordination, and no OCR: the labels are stylised artwork, which
-  general text recognition handles badly, but identical frames are pixel
-  identical, which makes grouping exact. Same-option frames measure 0.00 apart
-  and different options 21.41, against a tolerance of 4.0.
-- `recorrelate` — re-analyse the last autoscan from disk. Capturing costs a live
-  session; the analysis should never require repeating it.
-- `watch ADDR...` — poll addresses live to see which hold steady between presses.
+- `autoscan` -- captures RAM and screen together and groups samples by the
+  label's pixels. Best on static screens; fails on animated ones.
+- `pressscan` -- **preferred for animated screens.** Speaks a varying number of
+  presses per sample, so the cursor follows a sequence nothing incidental
+  reproduces. Does not assume the menu size; tries each and reports which fit.
+- `labels ADDR` -- sweeps a menu and keeps a picture of each option, so the
+  spoken table can be written from what was actually on screen. Cues each press
+  rather than waiting to notice one.
+- `find` / `snap` -- manual snapshot and sequence search.
+- `watch ADDR...` -- poll addresses live to see which hold steady between
+  presses.
+- `recorrelate` -- re-analyse the last autoscan from disk. Capturing costs the
+  player a live session; analysis must never require repeating it.
 
-Snapshots are 31 MB and take 0.7 s over PINE, with PCSX2 unaffected. Note that
+`source/tools/probe_voice.py` speaks cues through NVDA so the player stays in
+the game. Instructions in a terminal do not work here: switching away loses the
+menu to its attract demo, and a player who cannot see the screen has nothing to
+time their presses by. Allow a **30 second lead** for the player to reach the
+game after reading a message -- shorter leads produced three empty runs.
+
+A 31 MB snapshot takes 0.7 s over PINE with no ill effect on PCSX2. Note that
 `bt2/scan.py` warns that reading all of RAM starved the VM and correlated with
-hangs; that concerns the guide's continuous polling during play, not a one-off
-diagnostic read.
+hangs; that concerns continuous polling during play, not one-off diagnostics.
 
 Captures land in `reference/probe/`, which is git-ignored. Game memory must
 never be committed.
+
+## Known gaps
+
+- Options, Dragon Library and every other submenu need cursor addresses.
+- Ultimate Battle Z and the rest are not detected at all.
+- The announcer says "Unknown screen" on every screen *transition*, not only on
+  genuinely unmapped screens, because no marker matches while one screen is
+  unloading and the next has not loaded. It needs a delay before speaking that.
+- On re-entering a screen the cursor briefly reads 0, so the first option can be
+  announced spuriously before the correct one. The cursor needs a moment to
+  settle after a screen change.
+- Nothing reads the 2,601 story strings yet.

@@ -1,15 +1,22 @@
-"""Prototype: speak the highlighted menu option as the cursor moves.
+"""Speak the highlighted menu option, working out which screen is showing.
 
-Proof that the whole chain works end to end -- PINE reads the cursor index and
-NVDA says the label -- not the finished feature.
+The screen has to be identified before a cursor can be read, because each menu
+reuses the same memory for its own purposes: 0x00AA12A8 is the main menu's
+cursor, but on the Options screen the same byte reads 163 and on Dragon Library
+208.  Announcing that as a menu position would name options at random.
 
-It still has to be told which screen it is looking at. The mod cannot yet work
-that out for itself, and reading a cursor address while some other screen is up
-means reading unrelated memory. Until a screen identifier is found (see
-docs/memory-map.md), pass the screen on the command line:
+Screens identify themselves.  Each one loads its own table of sprite names into
+memory, so the Options screen can be recognised by the literal text
+"mc_icon_saveload" sitting at a fixed address.  That is worth far more than a
+state number: it is evidence that can be read back and checked, where a magic
+integer can only be trusted.  An earlier candidate, 0x0034F000, looked like a
+perfect screen enum across three screens and then failed the first transition it
+had not been derived from -- it never reset on leaving a submenu.
 
-    python menu_announcer.py main      # Main Menu
-    python menu_announcer.py title     # New Game / Load Game spinner
+Screens whose cursor is not mapped yet are still detected, and deliberately stay
+silent rather than guess.
+
+    python menu_announcer.py [--seconds=120]
 
 Press Ctrl+C to stop.
 """
@@ -22,73 +29,115 @@ import time
 from pine_client import PineClient
 
 
-class Screen:
-    """One menu: where its cursor lives and what its options are called.
+def _read_bytes(client: PineClient, address: int, count: int) -> bytes:
+    return bytes(client.read8(address + offset) for offset in range(count))
 
-    The labels are written here because they exist nowhere else. BT2 draws its
-    menu text as artwork, so there is no string in the game to read -- this
-    table is the only place those words exist as text, and the only thing that
-    can be translated.
+
+class Screen:
+    """A menu: how to recognise it, where its cursor is, what its options are.
+
+    Labels live here because they exist nowhere else. BT2 draws menu text as
+    artwork, so no string in the game spells "Dragon Adventure" -- this table is
+    the only place those words exist as text, and the only thing translatable.
     """
 
-    def __init__(self, name: str, address: int, stride: int, labels: dict):
+    def __init__(self, name, marker_address, marker, cursor=None, stride=1,
+                 labels=None):
         self.name = name
-        self.address = address
+        self.marker_address = marker_address
+        self.marker = marker
+        self.cursor = cursor
         self.stride = stride
-        self.labels = labels
+        self.labels = labels or {}
 
-    def read(self, client: PineClient) -> str | None:
-        raw = client.read8(self.address)
+    def present(self, client: PineClient) -> bool:
+        try:
+            return _read_bytes(
+                client, self.marker_address, len(self.marker)
+            ) == self.marker
+        except Exception:
+            return False
+
+    def option(self, client: PineClient) -> str | None:
+        if self.cursor is None:
+            return None
+        raw = client.read8(self.cursor)
         if raw % self.stride:
             return None
         return self.labels.get(raw // self.stride)
 
 
-SCREENS = {
-    # docs/memory-map.md: verified against 14 paired screen-and-RAM captures.
-    "main": Screen("Main Menu", 0x00AA12A8, 1, {
-        0: "Dragon Adventure",
-        1: "Ultimate Battle Z",
-        2: "Dragon Tournament",
-        3: "Dueling",
-        4: "Ultimate Training",
-        5: "Evolution Z",
-        6: "Item Shop",
-        7: "Data Center",
-        8: "Options",
-        9: "Dragon Library",
+# Markers are matched as a prefix, so a name that continues past the window it
+# was found in still matches -- mc_menu_lineanim is really mc_menu_lineanime,
+# and an exact-length comparison failed on that trailing letter.
+SCREENS = [
+    Screen("Main Menu", 0x00AA15EC, b"mc_menu_lineanim", 0x00AA12A8, 1, {
+        0: "Dragon Adventure", 1: "Ultimate Battle Z", 2: "Dragon Tournament",
+        3: "Dueling", 4: "Ultimate Training", 5: "Evolution Z",
+        6: "Item Shop", 7: "Data Center", 8: "Options", 9: "Dragon Library",
     }),
-    # The title spinner counts in twos. Why is still unexplained, and the main
-    # menu does not do it, so the stride stays per-screen rather than global.
-    "title": Screen("Title", 0x00533A73, 2, {
-        0: "New Game",
-        1: "Load Game",
-    }),
-}
+    # The title spinner counts in twos; the main menu does not, so stride is
+    # per-screen rather than a global assumption.
+    Screen("Title", 0x00533D60, bytes([0x01, 0x80, 0x00, 0x00, 0x00, 0x00,
+                                       0x00, 0xC4, 0xE1, 0x06, 0x53, 0x53]),
+           0x00533A73, 2, {0: "New Game", 1: "Load Game"}),
+    # Detected but not yet mapped. Naming the screen is useful; guessing at its
+    # rows would not be. Their marker addresses come from a single visit each,
+    # unlike the main menu's, which held across nineteen captures.
+    Screen("Options", 0x00AFCF85, b"mc_icon_saveload"),
+    Screen("Dragon Library", 0x00AB1FAF, b"mc_musicprogram_0"),
+]
 
 POLL_SECONDS = 0.05
 
 
-def main(screen: Screen, seconds: float) -> int:
+def detect(client: PineClient, current: Screen | None) -> Screen | None:
+    """Identify the screen, re-checking the current one first.
+
+    Checking the likely answer before the alternatives keeps the common case to
+    a single short read, rather than probing every screen on every poll.
+    """
+    if current is not None and current.present(client):
+        return current
+    for screen in SCREENS:
+        if screen is not current and screen.present(client):
+            return screen
+    return None
+
+
+def main(seconds: float) -> int:
     from bt2.speech import Speaker
 
     speaker = Speaker(enabled=True, echo=False)
     client = PineClient(timeout=10.0)
 
+    screen: Screen | None = None
     spoken: str | None = None
     pending: int | None = None
     settled: int | None = None
 
-    print(f"Announcing {screen.name}. Move the cursor; Ctrl+C to stop.\n")
-    speaker.say(f"{screen.name} reader ready.")
+    print("Reading menus. Move around; Ctrl+C to stop.\n")
+    speaker.say("Menu reader ready.")
     try:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            raw = client.read8(screen.address)
+            found = detect(client, screen)
+            if found is not screen:
+                screen = found
+                spoken = settled = pending = None
+                name = screen.name if screen else "Unknown screen"
+                print(f"[{name}]")
+                speaker.say(name)
+                if screen is not None and screen.cursor is None:
+                    print("  (options here are not mapped yet, staying silent)")
+            if screen is None or screen.cursor is None:
+                time.sleep(0.2)
+                continue
 
-            # Require a value to repeat before trusting it. A read can land
+            raw = client.read8(screen.cursor)
+            # Require a value to repeat before trusting it: a read can land
             # while the game is updating the cursor, and announcing that
-            # half-written state would speak an option never actually shown.
+            # half-written state would speak an option never shown.
             if raw != pending:
                 pending = raw
                 time.sleep(POLL_SECONDS)
@@ -98,17 +147,13 @@ def main(screen: Screen, seconds: float) -> int:
                 continue
             settled = raw
 
-            label = None
-            if raw % screen.stride == 0:
-                label = screen.labels.get(raw // screen.stride)
+            label = screen.labels.get(raw // screen.stride) if not (
+                raw % screen.stride
+            ) else None
             if label is None:
-                # Not a position this screen has, so most likely another screen
-                # is up. Say nothing rather than name the wrong option: for a
-                # player who cannot see, a confident error is worse than silence.
                 print(f"  (value {raw} is not an option here, staying silent)")
                 time.sleep(POLL_SECONDS)
                 continue
-
             if label != spoken:
                 spoken = label
                 print(f"  {label}")
@@ -124,11 +169,8 @@ def main(screen: Screen, seconds: float) -> int:
 
 
 if __name__ == "__main__":
-    name = "main"
     limit = 120.0
     for argument in sys.argv[1:]:
         if argument.startswith("--seconds="):
             limit = float(argument.split("=", 1)[1])
-        elif argument in SCREENS:
-            name = argument
-    sys.exit(main(SCREENS[name], limit))
+    sys.exit(main(limit))
