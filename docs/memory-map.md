@@ -253,12 +253,25 @@ and there is no cursor. A search of four menu captures found no stable pointer
 to the displayed string, so the menus appear to render by index into a block.
 Cutscenes may well differ, since they must show arbitrary lines in sequence.
 
+**The corpus now exists.** `source/tools/extract_text.py` parses the disc's
+ISO9660 directory and the AFS archive and pulls the story text out offline:
+553 `TXT-US-*` files, 2,620 strings, **2,458 distinct lines**, landing in
+`reference/corpus/` (git-ignored, like all game content). The count agrees with
+the 2,601 counted independently before, which is the check that the parsing is
+right rather than merely plausible.
+
+Two things the extractor had to learn, both of which looked like success:
+names in this archive are **not unique** -- 553 entries share 81 names -- so
+keying on the name alone silently kept one file in seven; and the archives live
+under `DATA/`, so a root-only directory search reports the disc is wrong when it
+is not.
+
 **How to settle it.** One capture session inside a Dragon Adventure cutscene:
 capture RAM at several points as dialogue advances, then find the region whose
 contents change to a *different known corpus string* each time. The extracted
 corpus is the filter that makes this tractable -- "is this an actual line of
 game dialogue" is far more selective than "did these bytes change". Re-extract
-the corpus from the ISO with the ISO9660 and AFS parsing described below.
+the corpus with `python extract_text.py`.
 
 ## Screens seen but not mapped
 
@@ -288,6 +301,14 @@ the corpus from the ISO with the ISO9660 and AFS parsing described below.
 - **A uniform press schedule** is periodic, so every animation counter whose
   cycle divides the sample count fits it as well as the cursor does -- 32,840
   matches. Vary the press count instead.
+- **Looking for menu and UI prose on the disc.** The Game Level screen's event
+  name ("Mysterious Alien Warrior") and its instruction line are plainly
+  readable in RAM, but neither appears **anywhere on the disc** as contiguous
+  UTF-16LE or ASCII -- not in the executable, not in either AFS, searched end to
+  end. They are stored packed and only become text once loaded. So the story
+  corpus **cannot** be used to check them: it confirms cutscene dialogue and
+  says nothing about UI prose. The two text sets are separate in storage as well
+  as in content.
 - **Pak names in RAM.** Only `zs2us_1.afs` and `zs2us_2.afs` appear. Individual
   paks are loaded by index; `Menu.pak` never appears as text.
 - **Assuming a screen enum is a clean 32-bit word.** Filtering on that left zero

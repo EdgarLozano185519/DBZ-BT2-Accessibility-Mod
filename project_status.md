@@ -65,6 +65,14 @@ numpy/scipy/Pillow) for testing menus without the full guide.
 
     ..\..\.venv\Scripts\python.exe menu_announcer.py --seconds=120
 
+## The save file
+
+The player's save is a **fresh new game**: only the first Dragon Adventure
+story event, Saiyan Saga's "Mysterious Alien Warrior", is unlocked. Anything
+needing a second story event -- checking that the event-name address holds for
+more than one event, or capturing a cutscene other than the opening -- has to
+wait until more is unlocked, and cannot be hurried by more analysis.
+
 ## Environment
 
 - Game: `D:\games\roms\PS2\Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja).iso`
@@ -103,6 +111,15 @@ Smaller, optional:
   session, where the interruptions are tiring.
 
 ## Recently finished
+
+- **The story corpus can be extracted offline.** `source/tools/extract_text.py`
+  reads the disc directly: 2,458 distinct lines of cutscene dialogue, narration
+  and tutorials, agreeing with the 2,601 counted independently before. This is
+  the filter the cutscene work depends on. Until now the docs pointed at
+  parsing that had never been committed.
+- **A negative worth knowing:** the Game Level screen's event name and
+  instruction line are nowhere on the disc as plain text, so the corpus cannot
+  validate them. Cutscene lines can be checked against it; UI prose cannot.
 
 - **Two detection bugs found by the first live run of Game Level**, which
   announced nothing at all. The HUD detector reads that screen as gameplay, so
