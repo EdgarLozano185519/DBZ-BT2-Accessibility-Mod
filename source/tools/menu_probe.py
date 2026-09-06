@@ -739,6 +739,241 @@ def watch(addresses: list[int], seconds: float = 20.0, period: float = 0.1) -> i
     return 0
 
 
+class _Quiet:
+    """A speaker that records instead of speaking, for diagnostics."""
+
+    def __init__(self):
+        self.said: list[str] = []
+
+    def say(self, text, **_):
+        self.said.append(text)
+
+    def silence(self):
+        pass
+
+    def close(self):
+        pass
+
+
+def check() -> int:
+    """Say what the mod thinks it is looking at, and why.
+
+    Written after two faults that were invisible from the outside: a screen
+    that announced nothing because the HUD heuristic called it gameplay, and a
+    screen that announced the wrong name because another screen's marker
+    matched first.  Both took minutes to find and would have taken seconds
+    with this.  Run it whenever a screen is silent or wrong.
+    """
+    from bt2 import vision
+    from bt2.menus import SCREENS, MenuReader
+
+    client = PineClient(timeout=10.0)
+    try:
+        print("marker matches, in the order detection considers them:")
+        for screen in SCREENS:
+            try:
+                hit = "MATCH" if screen.present(client) else "."
+            except Exception as error:
+                hit = f"error: {error}"
+            note = "  (raw signature, weak)" if screen.weak_marker else ""
+            note += "  (flagged as inside Adventure)" if screen.in_adventure else ""
+            print(f"  {screen.name:<16} {hit}{note}")
+
+        reader = MenuReader(_Quiet())
+        found = reader._detect(client)
+        print(f"\ndetected: {found.name if found else 'none -- would say Unknown screen'}")
+        if found is not None and found.readable:
+            raw, label, settled = found.option(client)
+            print(f"cursor:   raw {raw} -> {label!r}" +
+                  ("" if settled else "   MIRRORS DISAGREE, would stay silent"))
+            if found.mirror is not None:
+                print(f"mirror:   {client.read8(found.mirror)} "
+                      f"at 0x{found.mirror:08X} (stride {found.mirror_stride})")
+        elif found is not None:
+            print("cursor:   not mapped for this screen; it names itself only")
+
+        image = vision.capture_game_window()
+        hud = vision.has_dragon_adventure_hud(image)
+        print(f"\nAdventure HUD detector says gameplay: {hud}")
+        if hud:
+            if found is None:
+                print("  Nothing recognised, so guidance runs. Expected during play.")
+            elif not found.in_adventure:
+                print(f"  {found.name} is up but is not flagged as living inside")
+                print("  Adventure, so menu reading would be SUSPENDED and the")
+                print("  screen would be silent. Set in_adventure=True on it.")
+            else:
+                print(f"  {found.name} is flagged, so its marker overrules this.")
+    finally:
+        client.close()
+    return 0
+
+
+def positionscan(screen_name: str, cues: list[str], lead: int = 20,
+                 settle: float = 4.0) -> int:
+    """Capture RAM and screen after each cued key press.
+
+    The press scan assumes a menu that wraps and answers to one repeated key.
+    The Game Level chooser is horizontal, has three entries, and is reached
+    only from inside a story event, so a schedule of "down N times" says
+    nothing about it.  Here each press is named instead, and every capture is
+    paired with a screenshot so the position can be **read back afterwards**
+    rather than assumed -- one missed press would otherwise poison the whole
+    correlation while looking fine.
+    """
+    from probe_voice import Voice
+    from bt2 import vision
+    from bt2.menus import SCREENS
+
+    screen = next((s for s in SCREENS if s.name.lower() == screen_name.lower()),
+                  None)
+    if screen is None:
+        print(f"No marker known for {screen_name!r}.")
+        return 1
+
+    STORE.mkdir(parents=True, exist_ok=True)
+    client = PineClient(timeout=15.0)
+    voice = Voice()
+    kept = 0
+    try:
+        voice.say(f"Position scan. Go to {screen_name} and rest your hands. "
+                  f"Press only the keys I name. Starting in {lead} seconds.")
+        voice.countdown(lead, "")
+        if not _require_screen(client, screen_name):
+            voice.say(f"Wrong screen. Expected {screen_name}. Nothing captured.")
+            return 1
+        voice.say("Confirmed. Here we go.")
+        time.sleep(1.0)
+        for index, cue in enumerate(cues):
+            voice.cue(f"{cue} once")
+            time.sleep(settle)
+            if not screen.present(client):
+                voice.say("Screen changed. Stopping.")
+                break
+            vision.capture_game_window().save(STORE / f"posn{index}.png")
+            chunks = []
+            for address in range(DEFAULT_BASE, FULL_END, CHUNK_BYTES):
+                size = min(CHUNK_BYTES, FULL_END - address)
+                chunks.append(client.read_aligned_range(address, size,
+                                                        allow_large=True))
+                time.sleep(CHUNK_PAUSE)
+            (STORE / f"posn{index}.bin").write_bytes(b"".join(chunks))
+            kept += 1
+            print(f"  posn{index}: after {cue}")
+        voice.say("Capture finished.")
+    finally:
+        client.close()
+        voice.close()
+    (STORE / "posn_cues.txt").write_text(",".join(cues[:kept]), encoding="utf-8")
+    print(f"\n{kept} captures in {STORE}.")
+    print("Read each posn*.png to see which entry is highlighted, then:")
+    print("    python menu_probe.py fit 2,1,2,3,2,1")
+    return 0
+
+
+def fit(positions: list[int], prefix: str = "posn", limit: int = 16) -> int:
+    """Find addresses that behave like an index across captures at known positions.
+
+    Constant wherever the position is the same, different wherever it differs,
+    and small enough to be an index.  That last constraint is what makes this
+    usable: on Options it cut 39,101 raw matches to 67, and only five of those
+    were an actual ramp.
+
+    Positions are the ones **read off the screenshots**, not the ones intended.
+    """
+    saved = [STORE / f"{prefix}{i}.bin" for i in range(len(positions))]
+    missing = [p.name for p in saved if not p.exists()]
+    if missing:
+        print(f"FAILED: no captures named {missing[0]} (and {len(missing)-1} more)")
+        return 1
+    groups = sorted(set(positions))
+    if len(groups) < 2:
+        print("FAILED: at least two different positions are needed.")
+        return 1
+
+    size = saved[0].stat().st_size
+    chunk = 4 * 1024 * 1024
+    survivors: dict[int, list[int]] = {}
+    for start in range(0, size, chunk):
+        count = min(chunk, size - start)
+        stack = np.empty((len(saved), count), dtype=np.uint8)
+        for index, path in enumerate(saved):
+            with open(path, "rb") as handle:
+                handle.seek(start)
+                stack[index] = np.frombuffer(handle.read(count), dtype=np.uint8)
+        ok = np.ones(count, dtype=bool)
+        value = {}
+        for group in groups:
+            rows = stack[[i for i, p in enumerate(positions) if p == group]]
+            ok &= (rows == rows[0]).all(axis=0)
+            value[group] = rows[0]
+        if not ok.any():
+            continue
+        for first in range(len(groups)):
+            for second in range(first + 1, len(groups)):
+                ok &= value[groups[first]] != value[groups[second]]
+        if not ok.any():
+            continue
+        where = np.nonzero(ok)[0]
+        values = np.stack([value[g][where] for g in groups], axis=1)
+        small = values.max(axis=1) <= limit
+        for offset, row in zip(where[small], values[small]):
+            survivors[DEFAULT_BASE + start + int(offset)] = row.tolist()
+
+    def ramp(values):
+        # Strides seen so far: 1 on the main menu and Options, 2 on the title
+        # screen, 4 on Game Level. Stride is per-screen and never assumed.
+        for stride in (1, 2, 4):
+            for base in range(0, limit):
+                if values == [base + stride * k for k in range(len(groups))]:
+                    return stride, base
+        return None
+
+    clean = {a: (v, ramp(v)) for a, v in survivors.items() if ramp(v)}
+    print(f"{len(survivors)} addresses survive; {len(clean)} are an index ramp\n")
+    for address, (values, (stride, base)) in sorted(clean.items()):
+        print(f"  0x{address:08X}  {values}   stride {stride}, "
+              f"position {groups[0]} = {base}")
+    if not clean:
+        print("None. Try more captures, or a position that was misread.")
+        return 1
+    print("\nAll of these fit the data they were found in, which proves nothing.")
+    print("Verify on a transition they were not derived from before shipping.")
+    return 0
+
+
+def dryrun(seconds: float = 25.0) -> int:
+    """Run the real guide loop with a recording speaker, and print what it says.
+
+    The mod's whole output is speech, which makes it awkward to check and
+    impossible to check without the player.  This drives the actual loop --
+    not an imitation of it -- against the running game and writes down every
+    line, so a change can be verified from a terminal.
+    """
+    import threading
+
+    from bt2.guide import waiting_guide
+
+    stop = threading.Event()
+    speaker = _Quiet()
+    original = speaker.say
+
+    def echo(text, **kwargs):
+        original(text, **kwargs)
+        print(f"  SPOKE: {text}", flush=True)
+
+    speaker.say = echo
+    threading.Thread(target=lambda: (time.sleep(seconds), stop.set()),
+                     daemon=True).start()
+    print(f"Running the real guide loop for {seconds:.0f}s.\n")
+    try:
+        waiting_guide("objective", stop_event=stop, speaker=speaker)
+    except Exception as error:
+        print(f"  loop raised {type(error).__name__}: {error}")
+    print(f"\n{len(speaker.said)} line(s) spoken.")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print(__doc__)
@@ -800,6 +1035,29 @@ def main(argv: list[str]) -> int:
             elif argument.startswith("--expected="):
                 expected = int(argument.split("=", 1)[1])
         return labels(address, lead, expected=expected)
+    if command == "check":
+        return check()
+    if command == "dryrun":
+        span = 25.0
+        for argument in argv[2:]:
+            if argument.startswith("--seconds="):
+                span = float(argument.split("=", 1)[1])
+        return dryrun(span)
+    if command == "positionscan":
+        target, cues, lead = "Main Menu", ["Left", "Right"], 20
+        for argument in argv[2:]:
+            if argument.startswith("--screen="):
+                target = argument.split("=", 1)[1]
+            elif argument.startswith("--cues="):
+                cues = [c.strip() for c in argument.split("=", 1)[1].split(",")]
+            elif argument.startswith("--lead="):
+                lead = int(argument.split("=", 1)[1])
+        return positionscan(target, cues, lead)
+    if command == "fit":
+        if len(argv) < 3:
+            print("Usage: fit 2,1,2,3,2,1   (positions read off the screenshots)")
+            return 1
+        return fit([int(v) for v in argv[2].split(",")])
     if command == "recorrelate":
         return recorrelate()
     if command == "watch":
