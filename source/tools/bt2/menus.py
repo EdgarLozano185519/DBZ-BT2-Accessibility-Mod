@@ -51,7 +51,7 @@ class Screen:
     """A menu: how to recognise it, where its cursor is, what its rows say."""
 
     def __init__(self, name, marker_address, marker, cursor=None, stride=1,
-                 labels=None, subtitles=None):
+                 labels=None, subtitles=None, mirror=None, mirror_stride=1):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -59,6 +59,11 @@ class Screen:
         self.stride = stride
         self.labels = labels or {}
         self.subtitles = subtitles or {}
+        # A second copy of the same cursor, kept by the game elsewhere in
+        # memory. Where one exists it is read too, and the option is spoken
+        # only if both agree -- see option().
+        self.mirror = mirror
+        self.mirror_stride = mirror_stride
 
     @property
     def readable(self) -> bool:
@@ -67,11 +72,29 @@ class Screen:
     def present(self, pine) -> bool:
         return _read_ascii(pine, self.marker_address, len(self.marker)) == self.marker
 
-    def option(self, pine) -> tuple[int, str | None]:
+    def option(self, pine) -> tuple[int, str | None, bool]:
+        """Return the raw cursor, its label, and whether the read is settled.
+
+        An unsettled read is one the mirrors disagreed about, which means try
+        again.  That is different from a value this screen has no option for,
+        where the right answer is a permanent silence.  Conflating the two
+        would let one unlucky frame mute an option until the player navigated
+        away and back.
+        """
         raw = pine.read8(self.cursor)
         if raw % self.stride:
-            return raw, None
-        return raw, self.labels.get(raw // self.stride)
+            return raw, None, True
+        index = raw // self.stride
+        if self.mirror is not None:
+            other = pine.read8(self.mirror)
+            if other % self.mirror_stride:
+                return raw, None, False
+            if other // self.mirror_stride != index:
+                # The two copies are mid-update, or one of them has moved to a
+                # different address in this run. Either way, saying nothing is
+                # better than naming an option on a coin toss.
+                return raw, None, False
+        return raw, self.labels.get(index), True
 
 
 def _read_ascii(pine, address: int, count: int) -> bytes:
@@ -170,7 +193,20 @@ SCREENS = [
     # Recognised but not mapped. Naming the screen helps; guessing at its rows
     # would not. Their markers come from a single visit each, unlike the main
     # menu's, which held across nineteen captures.
-    Screen("Options", 0x00AFCF85, b"mc_icon_saveload"),
+    # Options is a vertical list of five, and it wraps. Its cursor was found by
+    # a press scan whose analysis matched five options and nothing else -- every
+    # other menu size produced zero candidates -- then confirmed live across a
+    # departure to the main menu and back, a transition it was not derived from.
+    # The game keeps the same index twice: plainly at 0x00AF7294, in the block
+    # Options allocates for itself beside its marker, and doubled at 0x00532173
+    # in static memory. Reading both is what lets a drifting copy be noticed
+    # rather than believed.
+    Screen(
+        "Options", 0x00AFCF85, b"mc_icon_saveload", 0x00AF7294, 1,
+        {0: "Save and Load", 1: "Controller", 2: "Screen", 3: "Sound",
+         4: "Exit"},
+        mirror=0x00532173, mirror_stride=2,
+    ),
     Screen("Dragon Library", 0x00AB1FAF, b"mc_musicprogram_0"),
 ]
 
@@ -250,8 +286,12 @@ class MenuReader:
             return
 
         try:
-            raw, label = self.screen.option(pine)
+            raw, label, settled = self.screen.option(pine)
         except Exception:
+            return
+        if not settled:
+            # Read again from scratch rather than committing this value.
+            self._pending = None
             return
 
         # Require a value to repeat before trusting it. A read can land while

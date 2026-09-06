@@ -56,9 +56,10 @@ trusted. Note the static string table at `0x00428280` holds these same names on
 *every* screen -- only the copies in the dynamic region are screen-specific.
 
 **Confidence.** The main menu marker held the same address across 19 captures
-and survived a full out-and-back transition. Options and Dragon Library rest on
-a **single visit each**; their addresses could shift between visits and have not
-been re-verified.
+and survived a full out-and-back transition, and again across an emulator
+restart. The Options marker has now been seen in two separate PCSX2 runs, on
+four visits. Dragon Library still rests on a **single visit**; its address could
+shift and has not been re-verified.
 
 ## Title screen: New Game / Load Game
 
@@ -94,6 +95,41 @@ labels read off screen.
 
 **Verified** by a live walk of the whole menu four times over with no wrong
 label and no gaps.
+
+## Options: five entries, and two copies of the cursor
+
+A vertical list, not a carousel, but it **wraps** at both ends, so the press
+scan's modular analysis applies unchanged.
+
+- `0x00AF7294` (byte) -- **cursor index, 0 to 4**, plain, no stride. Sits in the
+  block Options allocates for itself, beside its own marker.
+- `0x00532173` (byte) -- the **same index doubled**, in static memory. Mirrored
+  at `0x00532183`; `0x00532193` and `0x005321A3` carry the signal offset by two.
+  A second copy at `0x004320F3` behaves identically.
+
+- `0` Save and Load, `1` Controller, `2` Screen, `3` Sound, `4` Exit
+
+Labels were read from a screenshot and are independently corroborated by the
+sprite names `mc_icon_saveload`, `mc_icon_controller`, `mc_icon_screen` and
+`mc_icon_sound`.
+
+**Verified.** A press scan of 18 varied samples matched **five options and
+nothing else** -- every other menu size from 3 to 16 produced zero candidates,
+which is strong independent confirmation of the option count. Narrowing the
+39,101 raw matches to values that can actually be an index left 5 addresses in
+these two families. All five then tracked the cursor correctly across a
+departure to the main menu and a re-entry, a transition they were not derived
+from, and all five kept their addresses and their agreement across a full
+emulator restart.
+
+The cursor **resets to the top on re-entry**, and off Options both families go
+stale (`0x00532173` reads 0, `0x00432103` reads 48) regardless of what is on
+screen. Neither means anything unless the marker says Options is up.
+
+**Both copies are read, and an option is spoken only if they agree.** A single
+address cannot tell a correct read from a drifted one; two can. A disagreement
+is treated as "read again", not as "no such option" -- otherwise one unlucky
+frame would mute an option until the player navigated away and back.
 
 ## Subtitles: the game's own words, in memory
 
@@ -163,10 +199,6 @@ the corpus from the ISO with the ISO9660 and AFS parsing described below.
 
 ## Screens seen but not mapped
 
-- **Options** -- a vertical list, not a carousel: Save/Load, Controller, Screen,
-  Sound, EXIT. Labels read from a screenshot and independently corroborated by
-  its sprite names (`mc_icon_saveload`, `mc_icon_controller`, `mc_icon_screen`,
-  `mc_icon_sound`). **Cursor address not found.**
 - **Dragon Library** -- detected only.
 - **Ultimate Battle Z** -- not detected at all. The announcer correctly says
   "Unknown screen" there, which is the intended behaviour: naming a screen it
@@ -235,15 +267,18 @@ never be committed.
 
 ## Known gaps
 
-- Options, Dragon Library and every other submenu need cursor addresses.
+- Dragon Library and every other submenu need cursor addresses.
 - Ultimate Battle Z and the rest are not detected at all.
 - Nothing reads the 2,601 story strings yet.
 - The subtitle block is relocated by shape, but only within
   `0x00C00000`-`0x00D00000`. If it ever lands outside that band the search
   misses it. Widening the band costs emulator time, so it should wait until a
   real miss is observed rather than being widened speculatively.
-- Relocation has been tested against synthetic RAM only. It has not yet run
-  against a real PCSX2 session where the block actually moved.
+- Relocation has been tested against synthetic RAM only. Across one emulator
+  restart the block did **not** move -- all ten lines still read at the recorded
+  addresses -- so the search did not fire and remains unexercised against a real
+  move. The block is evidently more stable than a single run's evidence
+  suggested, which lowers the urgency but not the uncertainty.
 
 ## Fixed
 

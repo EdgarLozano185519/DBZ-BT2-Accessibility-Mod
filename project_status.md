@@ -12,6 +12,9 @@ Menus speak through NVDA, driven by the game's own memory:
 
 - **Title screen** -- New Game / Load Game.
 - **Main Menu** -- all ten options, Dragon Adventure through Dragon Library.
+- **Options** -- all five entries, Save and Load through Exit. The game keeps
+  two copies of this cursor and both are read; if they ever disagree the mod
+  stays silent rather than guess.
 - **Screen detection** -- the announcer works out which screen is showing and
   picks the matching labels, or stays silent when it cannot.
 - **Menu subtitles on F12** -- the character's spoken line for the highlighted
@@ -75,16 +78,14 @@ Check the whole chain with `python pine_check.py`.
 
 ## Next steps, roughly in order
 
-1. **Map more screens.** This is the next real work. Options' labels are known
-   but its cursor address is not. Dragon Library is detected only. Ultimate
-   Battle Z and the rest are not detected at all, so the announcer names them
-   "Unknown screen" -- correct, but not useful. Use `menu_probe.py pressscan`
-   to find each cursor, then `labels` to write the table from what was actually
-   on screen.
-2. **Re-verify the Options and Dragon Library markers.** Both rest on a single
-   visit each, unlike the main menu's, which held across nineteen captures. A
-   marker that shifts between visits would make the announcer name the wrong
-   screen. Cheap to check: visit each twice in separate PCSX2 runs.
+1. **Map the remaining screens.** Dragon Library is detected but its cursor and
+   labels are both unknown: one press scan, then a `labels` run. Ultimate
+   Battle Z and the rest are not detected at all, so each needs a **marker**
+   found first -- a separate capture and diff -- before a cursor is worth
+   looking for. The Options run is the worked example to follow.
+2. **Re-verify the Dragon Library marker.** It rests on a single visit, unlike
+   the main menu's and now Options'. A marker that shifts between visits would
+   make the announcer name the wrong screen. Cheap: visit it in two runs.
 3. **Dragon Adventure story subtitles.** The largest untouched win. Story text
    is real UTF-16LE in `TXT-US-*` inside `ZS2US_1.AFS`, on-screen prose is
    demonstrably readable from RAM, and the menu subtitles prove the subtitle
@@ -100,13 +101,19 @@ Smaller, optional:
 
 ## Recently finished
 
+- **Options speaks, all five entries.** Found by a press scan that matched five
+  options and nothing else, then confirmed on a re-entry it was not derived
+  from, then again across an emulator restart. Its marker is no longer a
+  single-visit guess: it has now held across two runs and four visits.
+
 - **The subtitle block is found by shape, not by address.** The ten recorded
   addresses came from one PCSX2 run and the block moves between runs, which
   left F12 dead until the next rebuild. When a read stops looking like text the
   mod now searches a narrow band for ten readable lines at the known spacing
   and remembers the offset. No game text is hardcoded, so it is not tied to
   English. Costs nothing on the happy path. **Tested against synthetic RAM
-  only** -- it has not yet met a real session where the block moved.
+  only** -- across one emulator restart the block did not move, so the search
+  never fired and has still not met a real move.
 
 - **The two announcement flaws are fixed** in the shipped path. "Unknown
   screen" now waits 1.5 seconds before speaking, so the gap between one screen
