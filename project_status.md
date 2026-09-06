@@ -104,6 +104,13 @@ Smaller, optional:
 
 ## Recently finished
 
+- **Two detection bugs found by the first live run of Game Level**, which
+  announced nothing at all. The HUD detector reads that screen as gameplay, so
+  menu reading was suspended there; a menu marker now overrules the heuristic.
+  Underneath that sat a worse one: the title screen's byte signature also
+  matches on Game Level, and being checked first it announced "New Game" over a
+  difficulty chooser. Named markers now outrank raw signatures, and two names
+  matching means the mod admits it does not know.
 - **Game Level speaks.** Found from a live session on the screen itself: a
   screenshot gave the labels and layout, the screen's own cursor sprite gave a
   marker, and six captures at visually confirmed positions gave the cursor. Two

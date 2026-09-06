@@ -46,13 +46,27 @@ address.
 - **Options** -- `mc_icon_saveload` at `0x00AFCF85`
 - **Dragon Library** -- `mc_musicprogram_0` at `0x00AB1FAF`
 - **Title** -- no unique sprite name; identified by the 12-byte signature
-  `01 80 00 00 00 00 00 C4 E1 06 53 53` at `0x00533D60`
+  `01 80 00 00 00 00 00 C4 E1 06 53 53` at `0x00533D60`. **This signature is
+  not exclusive**: it also matches on the Game Level screen. It is therefore
+  treated as weak evidence -- see below.
 
 Match markers as a **prefix**. The main menu's name is `mc_menu_lineanime`; an
 exact comparison against a 16-byte window clipped the trailing "e" and failed.
 
 A readable marker beats a state number because it can be checked rather than
-trusted. Note the static string table at `0x00428280` holds these same names on
+trusted.
+
+**Named markers outrank raw signatures, and ambiguity means silence.** Markers
+were assumed to be mutually exclusive, and detection returned the first that
+matched. That assumption was wrong: the title screen's byte signature also
+matches on the Game Level chooser, and because Title is checked earlier it
+shadowed it -- announcing "New Game" over a difficulty menu. Detection now
+checks every screen. A single matching sprite name wins; two matching names
+means the mod does not know where it is and says so; a raw signature is
+consulted only when no name matches at all.
+
+Verified against every capture on disk: Game Level, Options, Main Menu and
+Title each identify correctly. Note the static string table at `0x00428280` holds these same names on
 *every* screen -- only the copies in the dynamic region are screen-specific.
 
 **Confidence.** The main menu marker held the same address across 19 captures
@@ -168,8 +182,17 @@ addresses, all nine of them index ramps, in the two families above. Read back
 live afterwards, correctly, on the same screen. **Not yet checked across a
 departure and return**, which is the standard this project holds cursors to.
 
-Note this screen sits *inside* Dragon Adventure. Menu reading runs whenever the
-Adventure HUD is absent, which is true here, so the two do not collide.
+**This screen sits inside Dragon Adventure, and the HUD detector calls it
+gameplay.** `has_dragon_adventure_hud` returns true on every capture of it, so
+the guide treated it as play, suspended menu reading and said nothing at all --
+the first symptom reported from a live run. Menu reading is no longer gated on
+the pixel heuristic alone: a screen flagged as living inside Adventure is looked
+for in memory each frame, and finding its marker overrules the heuristic. A
+marker that can be checked beats a heuristic that can only be trusted.
+
+The cost is one short read per frame during play, for the one screen flagged so
+far. The pixel heuristic is left alone: it is load-bearing for navigation, and
+this screen is a menu whatever it looks like.
 
 ## Subtitles: the game's own words, in memory
 
@@ -310,6 +333,10 @@ never be committed.
 - Dragon Library and every other submenu need cursor addresses.
 - The Game Level cursor has not been checked across leaving the screen and
   coming back, and its two text addresses have been seen for one event only.
+- Other screens may also be misread as gameplay by the HUD detector, or shadow
+  one another the way Title shadowed Game Level. Only the screens with captures
+  on disk have been checked, and each new screen needs the same two questions
+  asked of it.
 - Other Dragon Adventure screens -- the event list this one is reached from --
   are still unmapped. Whether they share `mc_da_5_lv_csr` is unknown, so the
   Game Level marker could in principle match one of them.

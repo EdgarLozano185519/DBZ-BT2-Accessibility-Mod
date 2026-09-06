@@ -1284,7 +1284,14 @@ f"{surface.describe()}."
                     # below, arrow calibration, and objective matching.
                     captured = self.frame()
                     captured_analysis = self.analyze(captured) if captured is not None else None
-                    if not self.navigation_scene_ready(captured_analysis):
+                    # Ask the scene gate first so its own counters stay current,
+                    # then let a menu marker overrule it. The Game Level chooser
+                    # reads as gameplay to the HUD heuristic; memory says
+                    # plainly that a menu is up, and that is checkable.
+                    scene_ready = self.navigation_scene_ready(captured_analysis)
+                    if scene_ready and menus.in_adventure_menu(self.pine):
+                        scene_ready = False
+                    if not scene_ready:
                         # Drain input edges while inactive: an L1 pressed in
                         # combat must never become a teleport after returning.
                         hotkeys.poll()

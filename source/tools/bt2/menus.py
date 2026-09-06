@@ -52,7 +52,7 @@ class Screen:
 
     def __init__(self, name, marker_address, marker, cursor=None, stride=1,
                  labels=None, subtitles=None, mirror=None, mirror_stride=1,
-                 context=None):
+                 context=None, in_adventure=False, weak_marker=False):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -70,6 +70,14 @@ class Screen:
         # automatically: it is the game's own text, but where it lives has been
         # confirmed for one story event only.
         self.context = context
+        # True for menus that appear while the Dragon Adventure HUD detector
+        # still reports gameplay. Those need the guide told explicitly that a
+        # menu is up; see MenuReader.in_adventure_menu.
+        self.in_adventure = in_adventure
+        # A marker that is a raw byte signature rather than a sprite name is
+        # weaker evidence: it can and does turn up on screens it has nothing to
+        # do with. Such a screen is only accepted when no named marker matches.
+        self.weak_marker = weak_marker
 
     @property
     def readable(self) -> bool:
@@ -195,6 +203,9 @@ SCREENS = [
         bytes([0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC4, 0xE1, 0x06,
                0x53, 0x53]),
         0x00533A73, 2, {0: "New Game", 1: "Load Game"},
+        # This signature also matches on the Game Level screen, where it
+        # announced "New Game" over a difficulty chooser. It is a last resort.
+        weak_marker=True,
     ),
     # Recognised but not mapped. Naming the screen helps; guessing at its rows
     # would not. Their markers come from a single visit each, unlike the main
@@ -231,6 +242,7 @@ SCREENS = [
         {0: "Level 1", 1: "Level 2", 2: "Level 3"},
         {0: 0x00D179C2, 1: 0x00D179C2, 2: 0x00D179C2},
         mirror=0x00432D71, mirror_stride=4, context=0x00D1A782,
+        in_adventure=True,
     ),
 ]
 
@@ -266,15 +278,48 @@ class MenuReader:
         self._subtitle_down = down
         return fired and desktop_input_allowed(self._user32)
 
-    def _detect(self, pine) -> Screen | None:
-        # Re-check the current screen first: the common case then costs one
-        # short read instead of probing every screen on every poll.
-        if self.screen is not None and self.screen.present(pine):
-            return self.screen
+    def in_adventure_menu(self, pine) -> bool:
+        """Is a menu showing that the HUD detector mistakes for gameplay?
+
+        The Game Level chooser looks enough like Dragon Adventure to the pixel
+        heuristic that it was classified as play, which suspended menu reading
+        and left the screen silent.  The screen says what it is in memory, and
+        a marker that can be checked beats a heuristic that can only be
+        trusted, so the marker decides.
+
+        Costs a short read per frame, and only for screens flagged as living
+        inside Adventure -- one, at present.
+        """
         for screen in SCREENS:
-            if screen is not self.screen and screen.present(pine):
-                return screen
-        return None
+            if not screen.in_adventure:
+                continue
+            try:
+                if screen.present(pine):
+                    return True
+            except Exception:
+                return False  # A dropped read must never suspend guidance.
+        return False
+
+    def _detect(self, pine) -> Screen | None:
+        """Identify the screen, or return None rather than guess.
+
+        Every screen is checked, not just the first that matches. Markers were
+        assumed to be mutually exclusive; the title screen's raw signature is
+        not, and it shadowed the Game Level chooser -- announcing "New Game"
+        over a difficulty menu, which is precisely the confident error this
+        mod must never make.
+
+        Named sprite markers decide. A raw signature is consulted only when no
+        name matches, and two names matching at once means the mod does not
+        know where it is and says so.
+        """
+        named = [s for s in SCREENS if not s.weak_marker and s.present(pine)]
+        if len(named) == 1:
+            return named[0]
+        if named:
+            return None
+        weak = [s for s in SCREENS if s.weak_marker and s.present(pine)]
+        return weak[0] if len(weak) == 1 else None
 
     def poll(self, pine, now: float) -> None:
         try:
