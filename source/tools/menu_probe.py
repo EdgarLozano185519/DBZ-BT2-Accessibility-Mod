@@ -267,7 +267,11 @@ def _group_by_label(crops: list) -> list[int]:
 
 
 def autoscan(
-    samples: int = 8, interval: float = 4.0, voice_enabled: bool = True
+    samples: int = 8,
+    interval: float = 4.0,
+    voice_enabled: bool = True,
+    lead: int = 5,
+    cue: str = "Down",
 ) -> int:
     """Capture RAM and screen together, then correlate them without help.
 
@@ -286,7 +290,7 @@ def autoscan(
 
     voice = Voice(enabled=voice_enabled)
     voice.countdown(
-        5, f"Auto scan. {samples} samples. Switch to the game now."
+        lead, f"Auto scan. {samples} samples. Switch to the game now."
     )
 
     client = PineClient(timeout=15.0)
@@ -294,7 +298,7 @@ def autoscan(
         for index in range(samples):
             # Cue first, then leave a beat for the press to land before the
             # screen and RAM are captured together.
-            voice.cue("Down")
+            voice.cue(cue)
             time.sleep(interval)
             image = vision.capture_game_window()
             chunks = []
@@ -370,6 +374,214 @@ def autoscan(
     return 0 if found else 1
 
 
+SPOKEN_COUNTS = {1: "Down", 2: "Down twice", 3: "Down three times",
+                 4: "Down four times"}
+
+
+def pressscan(
+    samples: int = 18,
+    interval: float = 2.0,
+    lead: int = 25,
+    seed: int = 20260906,
+) -> int:
+    """Drive the cursor on a varying, spoken schedule and find what follows it.
+
+    Grouping frames by their pixels fails on animated screens: the main menu's
+    clouds, characters and flavour text keep moving, so two captures of the same
+    option differ as much as captures of different options.  Without that, the
+    only record of where the cursor was is the schedule of presses itself.
+
+    A uniform "press down once each time" schedule is useless for that, because
+    it is periodic: every animation counter whose cycle divides the sample count
+    matches it just as well as the cursor does, which buried the real address
+    among tens of thousands of false ones.  Varying the number of presses gives
+    a sequence nothing incidental reproduces.
+
+    The option count is not assumed.  Each plausible menu size implies a
+    different pattern of repeats, so every size is tried and the ones that
+    actually fit are reported.
+    """
+    import random
+
+    from probe_voice import Voice
+
+    STORE.mkdir(parents=True, exist_ok=True)
+    from bt2 import vision
+
+    # A fixed seed keeps a run reproducible while still being non-periodic.
+    rng = random.Random(seed)
+    schedule = [rng.choice((1, 1, 2, 2, 3, 4)) for _ in range(samples)]
+
+    voice = Voice()
+    voice.countdown(lead, "Press scan. Go to the main menu now.")
+
+    blocks: list[bytes] = []
+    client = PineClient(timeout=15.0)
+    try:
+        for index, presses in enumerate(schedule):
+            voice.cue(SPOKEN_COUNTS[presses])
+            # More presses need more time, plus a beat for the slide to settle.
+            time.sleep(interval + 0.55 * (presses - 1))
+            chunks = []
+            for chunk_address in range(DEFAULT_BASE, FULL_END, CHUNK_BYTES):
+                chunk_size = min(CHUNK_BYTES, FULL_END - chunk_address)
+                chunks.append(
+                    client.read_aligned_range(
+                        chunk_address, chunk_size, allow_large=True
+                    )
+                )
+                time.sleep(CHUNK_PAUSE)
+            block = b"".join(chunks)
+            blocks.append(block)
+            (STORE / f"press{index}.bin").write_bytes(block)
+            vision.capture_game_window().save(STORE / f"press{index}.png")
+            print(f"  sample {index}: after {presses} press(es)")
+            if (index + 1) % 6 == 0 and index + 1 < samples:
+                voice.cue(f"{index + 1} of {samples}")
+    finally:
+        client.close()
+        voice.say("Capture finished. Analysing.")
+
+    (STORE / "press_schedule.txt").write_text(
+        ",".join(str(p) for p in schedule), encoding="utf-8"
+    )
+    print(f"\nSchedule: {schedule}\n")
+    return _analyse_presses(blocks, schedule, voice)
+
+
+def _analyse_presses(blocks, schedule, voice=None) -> int:
+    """Try each plausible option count and report which fit the schedule."""
+    # Where the cursor started is unknown, but only the pattern of repeats
+    # matters, and that is unchanged by a constant offset.
+    travelled = []
+    total = 0
+    for presses in schedule:
+        total += presses
+        travelled.append(total)
+
+    results = []
+    for size in range(3, 17):
+        groups = [step % size for step in travelled]
+        if len(set(groups)) < 2:
+            continue
+        found = _correlate(blocks, groups, quiet=True)
+        results.append((size, len(found), found))
+        print(f"  {size:2d} options -> {len(found)} matching address(es)")
+
+    plausible = [r for r in results if 0 < r[1] <= 40]
+    if not plausible:
+        print("\nNo option count produced a clean match.")
+        if voice:
+            voice.say("No match. Another run needed.")
+            voice.close()
+        return 1
+
+    print()
+    for size, count, found in plausible:
+        print(f"=== {size} options: {count} address(es) ===")
+        for address, values in sorted(found.items())[:12]:
+            print(f"    0x{address:08X}  values: {values}")
+        print()
+
+    best = min(plausible, key=lambda r: r[1])
+    if voice:
+        voice.say(f"Found it. {best[0]} options, {best[1]} addresses.")
+        voice.close()
+    return 0
+
+
+# The highlighted option on the main menu, centred and enlarged. Relative to
+# the game viewport so it survives a resized window.
+MAIN_MENU_LABEL = (0.14, 0.33, 0.72, 0.44)
+
+
+def labels(
+    address: int,
+    lead: int = 30,
+    box: tuple = MAIN_MENU_LABEL,
+    expected: int = 10,
+) -> int:
+    """Collect one picture of the label for each value a cursor address takes.
+
+    Reading the index is only half of an announcement: something has to say
+    which words that index stands for, and the game has no string to supply
+    them.  This walks the menu and keeps a picture of each option, so the
+    spoken table can be written from what was actually on screen.
+
+    A value is only trusted once it has held still across a screen capture,
+    since a read taken mid-slide would pair an index with the previous label.
+    """
+    from PIL import Image
+
+    from bt2 import vision
+    from probe_voice import Voice
+
+    STORE.mkdir(parents=True, exist_ok=True)
+    voice = Voice()
+    voice.countdown(
+        lead, f"Label sweep. Press down when told, {expected} times."
+    )
+
+    seen: dict[int, Image.Image] = {}
+    client = PineClient(timeout=15.0)
+    try:
+        # Cue each press rather than waiting to notice one. Passively watching
+        # asks the player to guess when to act, and a player who cannot see the
+        # screen has nothing to guess from.
+        for _ in range(expected + 4):
+            if len(seen) >= expected:
+                break
+            voice.cue("Down")
+            time.sleep(1.7)
+            before = client.read8(address)
+            image = vision.capture_game_window()
+            if client.read8(address) != before:
+                continue  # Caught mid-slide; the next cue will come round again.
+            if before in seen:
+                continue
+            left, top, right, bottom = vision.game_viewport(image) or (
+                0, 0, image.width, image.height
+            )
+            width, height = right - left, bottom - top
+            seen[before] = image.crop((
+                int(left + box[0] * width), int(top + box[1] * height),
+                int(left + box[2] * width), int(top + box[3] * height),
+            ))
+            print(f"  captured option {before} ({len(seen)}/{expected})")
+    finally:
+        client.close()
+
+    if not seen:
+        voice.say("Nothing captured.")
+        voice.close()
+        return 1
+
+    # One tall image beats ten separate files: the table has to be written by
+    # reading them side by side anyway, in index order.
+    ordered = [seen[key] for key in sorted(seen)]
+    sheet = Image.new(
+        "RGB",
+        (max(c.width for c in ordered), sum(c.height for c in ordered)),
+        (0, 0, 0),
+    )
+    offset = 0
+    for crop in ordered:
+        sheet.paste(crop, (0, offset))
+        offset += crop.height
+    sheet.save(STORE / "label_sheet.png")
+
+    missing = [v for v in range(expected) if v not in seen]
+    print(f"\nCaptured options {sorted(seen)} into label_sheet.png")
+    if missing:
+        print(f"Missing: {missing}")
+        voice.say(f"{len(seen)} of {expected} captured. Missing "
+                  f"{len(missing)}.")
+    else:
+        voice.say(f"All {expected} options captured.")
+    voice.close()
+    return 0
+
+
 def recorrelate() -> int:
     """Re-analyse the last autoscan from disk, without capturing again."""
     from PIL import Image
@@ -398,7 +610,7 @@ def recorrelate() -> int:
 
 
 def _correlate(
-    blocks: list[bytes], groups: list[int], limit: int = 30
+    blocks: list[bytes], groups: list[int], limit: int = 30, quiet: bool = False
 ) -> dict[int, list[int]]:
     """Report addresses that are constant per group and differ between groups.
 
@@ -430,6 +642,9 @@ def _correlate(
             found.setdefault(
                 DEFAULT_BASE + offset + int(index) * widths[label], values
             )
+
+    if quiet:
+        return found
 
     if not found:
         print("No address tracked the on-screen label.")
@@ -514,7 +729,35 @@ def main(argv: list[str]) -> int:
                 samples = int(argument.split("=", 1)[1])
             elif argument.startswith("--interval="):
                 interval = float(argument.split("=", 1)[1])
-        return autoscan(samples, interval, voice_enabled="--quiet" not in argv)
+        lead = 5
+        cue = "Down"
+        for argument in argv[2:]:
+            if argument.startswith("--lead="):
+                lead = int(argument.split("=", 1)[1])
+            elif argument.startswith("--cue="):
+                cue = argument.split("=", 1)[1]
+        return autoscan(
+            samples, interval, "--quiet" not in argv, lead, cue
+        )
+    if command == "pressscan":
+        samples, interval, lead = 18, 2.0, 25
+        for argument in argv[2:]:
+            if argument.startswith("--samples="):
+                samples = int(argument.split("=", 1)[1])
+            elif argument.startswith("--interval="):
+                interval = float(argument.split("=", 1)[1])
+            elif argument.startswith("--lead="):
+                lead = int(argument.split("=", 1)[1])
+        return pressscan(samples, interval, lead)
+    if command == "labels":
+        address = int(argv[2], 16) if len(argv) > 2 else 0xAA12A8
+        lead, expected = 30, 10
+        for argument in argv[3:]:
+            if argument.startswith("--lead="):
+                lead = int(argument.split("=", 1)[1])
+            elif argument.startswith("--expected="):
+                expected = int(argument.split("=", 1)[1])
+        return labels(address, lead, expected=expected)
     if command == "recorrelate":
         return recorrelate()
     if command == "watch":
