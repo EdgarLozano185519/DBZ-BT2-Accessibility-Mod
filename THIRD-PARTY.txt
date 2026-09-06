@@ -1,0 +1,23 @@
+Bundled runtime components; individual licenses apply (see licenses folder).
+Python: 3.12.4
+NVDA controller client: 2026.2
+numpy: 1.26.4
+scipy: 1.14.0
+Pillow: 10.4.0
+pywin32: 306
+hidapi: 0.15.0
+pyinstaller: 6.19.0
+
+Unmodified NVDA controller DLL is dynamically loaded and replaceable at
+worker/_internal/vendor/nvda/x64/nvdaControllerClient.dll.
+Its LGPL license, usage documentation, and source link accompany this release.
+NVDA source: https://github.com/nvaccess/nvda/tree/release-2026.2
+Python source: https://www.python.org/downloads/source/
+NumPy source: https://github.com/numpy/numpy
+SciPy source: https://github.com/scipy/scipy
+Pillow source: https://github.com/python-pillow/Pillow
+pywin32 source: https://github.com/mhammond/pywin32
+hidapi wrapper source: https://github.com/trezor/cython-hidapi
+PyInstaller bootloader: https://github.com/pyinstaller/pyinstaller
+PyInstaller's distribution exception applies to its bundled bootloader.
+Python's Windows runtime libraries retain their upstream notices.

@@ -1,0 +1,101 @@
+"""The active navigation surface: a world map or a walkable local area."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from .memory import Location, fingerprint_locations
+
+WORLD = "world"
+VISION_WORLD = "vision_world"
+LOCAL_INTERACTION = "local_interaction"
+LOCAL_EXIT = "local_exit"
+
+
+@dataclass(frozen=True)
+class Surface:
+    kind: str
+    table_address: int
+    player_address: int
+    locations: tuple[Location, ...]
+    fingerprint: str
+    name: str | None = None
+    named: bool = False
+    stage_signature: tuple[int, ...] = ()
+    mirrors: tuple[int, ...] = ()
+    local_right: tuple[float, float] | None = None
+    local_forward: tuple[float, float] | None = None
+    descriptor: tuple[int, ...] = ()
+    label_key: str | None = None
+
+    @property
+    def is_local(self) -> bool:
+        return self.kind.startswith("local")
+
+    @property
+    def is_vision_only(self) -> bool:
+        return self.kind == VISION_WORLD
+
+    @property
+    def requires_world_return(self) -> bool:
+        return self.kind == LOCAL_EXIT
+
+    @property
+    def display_name(self) -> str:
+        if self.name:
+            return self.name
+        if self.is_local:
+            return "New area"
+        return "New map"
+
+    @property
+    def identity(self) -> tuple:
+        """Stable across player movement, changes when the surface changes."""
+        if self.is_local:
+            return (self.kind, self.fingerprint, self.descriptor)
+        # Spoken labels are presentation only, including during teleport's
+        # independent memory revalidation. They must never change map identity.
+        return (WORLD, self.fingerprint)
+
+    def describe(self) -> str:
+        if self.is_local:
+            return f"{self.display_name} local area"
+        if self.is_vision_only:
+            return f"{self.display_name} world map"
+        return (
+            f"{self.display_name} world map with {len(self.locations)} "
+            f"{'point' if len(self.locations) == 1 else 'points'}"
+        )
+
+
+def world_surface(
+    table_address: int,
+    player_address: int,
+    locations: tuple[Location, ...],
+    mirrors: tuple[int, ...] = (),
+) -> Surface:
+    return Surface(
+        kind=WORLD,
+        table_address=table_address,
+        player_address=player_address,
+        locations=locations,
+        fingerprint=fingerprint_locations(locations),
+        mirrors=mirrors,
+    )
+
+
+def vision_world_surface() -> Surface:
+    """A usable minimap with no currently discoverable coordinate table.
+
+    It supports the primary screen-space guide immediately.  Player memory and
+    teleport simply remain unavailable until normal discovery catches up.
+    """
+    return Surface(
+        kind=VISION_WORLD,
+        table_address=0,
+        player_address=0,
+        locations=(),
+        fingerprint="live-minimap",
+        name="Dragon Adventure",
+        named=True,
+    )

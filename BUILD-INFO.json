@@ -1,0 +1,14 @@
+{
+  "release": "2026.09.05-r4",
+  "platform": "Windows x64",
+  "dependencies": {
+    "Python": "3.12.4",
+    "NVDA controller client": "2026.2",
+    "numpy": "1.26.4",
+    "scipy": "1.14.0",
+    "Pillow": "10.4.0",
+    "pywin32": "306",
+    "hidapi": "0.15.0",
+    "pyinstaller": "6.19.0"
+  }
+}
