@@ -85,6 +85,7 @@ def main():
         from PIL import Image, ImageGrab
         from pine_client import PineClient
         from bt2.guide import waiting_guide
+        from bt2.menus import MenuReader
         from bt2.speech_output import NvdaClient, SapiClient
         reader = NvdaClient()
         sapi = SapiClient()

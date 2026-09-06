@@ -1240,6 +1240,10 @@ f"{surface.describe()}."
         )
         hotkeys = TeleportHotkeys()
         destinations = DestinationHotkeys()
+        # Menus are read only while navigation guidance is suspended, so the two
+        # can never talk over one another.
+        from .menus import MenuReader
+        menus = MenuReader(self.speaker)
         if hotkeys.controller_name:
             self.speaker.say(f"Teleport: T key or L1 on {hotkeys.controller_name}.")
         else:
@@ -1264,6 +1268,9 @@ f"{surface.describe()}."
                             self.speaker.silence()
                             winsound.PlaySound(None,0)
                             desktop_suspended = True
+                            # The player is reading with their screen reader,
+                            # not playing. Re-announce when they come back.
+                            menus.suspend()
                         hotkeys.poll()
                         destinations.poll()
                         if stop_event is not None:
@@ -1282,8 +1289,12 @@ f"{surface.describe()}."
                         # combat must never become a teleport after returning.
                         hotkeys.poll()
                         destinations.poll()
+                        # Outside Adventure the player is usually in a menu, and
+                        # this is the only point where nothing else is speaking.
+                        menus.poll(self.pine, time.monotonic())
                         time.sleep(0.15)
                         continue
+                    menus.suspend()
                     self.note_capture_size(captured)
                     if state.surface is None:
                         observed = discover_surface(

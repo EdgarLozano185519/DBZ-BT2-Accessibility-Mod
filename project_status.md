@@ -18,12 +18,44 @@ Menus speak through NVDA, driven by the game's own memory:
   main menu option, read as the game's own text rather than from a table we
   wrote. On a key press only, so it does not slow down browsing.
 
-Run it with the project virtual environment, from `source/tools`:
+Menu reading is **part of the guide app**. `bt2/menus.py` runs inside the guide
+worker's main loop, at the one point where navigation guidance is suspended --
+outside Dragon Adventure, which is exactly when the player is in a menu. The two
+therefore never talk over one another. Press **F12** for the highlighted
+option's spoken line.
+
+## Running and building
+
+**As a player.** Open `DBZ BT2 Guide.exe` and choose Open game, then Start
+guide, exactly as before. Menus now speak. Requirements are unchanged:
+
+- Windows 10/11 x64, .NET Framework 4.8
+- PCSX2 with PINE enabled on port 28011 (the guide's Open game button does this)
+- Their own PS2 BIOS and game dump: SLUS-21441, CRC FE961D28
+- NVDA running, or Windows SAPI as the automatic fallback
+
+**No Python, pip, or terminal is needed.** Everything ships inside the worker.
+
+**Rebuilding after a source change.** The worker is a compiled bundle, so
+editing `bt2/*.py` changes nothing until it is rebuilt:
+
+    powershell -File source/tools/build_worker.ps1
+    # then copy dist/guide-worker over the worker folder
+
+    powershell -File source/tools/build_desktop.ps1
+    # rebuilds the C# interface
+
+
+
+Both verify the result is x64, because the bundled NVDA client is the 64-bit one
+and a mismatch fails at runtime rather than at build time.
+
+`build_announcer.ps1` builds a much smaller standalone menu reader (26 MB, no
+numpy/scipy/Pillow) for testing menus without the full guide.
+
+**From source, for development**, from `source/tools`:
 
     ..\..\.venv\Scripts\python.exe menu_announcer.py --seconds=120
-
-This is a prototype in `source/tools`, not yet part of the shipped guide. It has
-not been wired into `guide_host.py`, the WinForms UI, or the packaged worker.
 
 ## Environment
 
