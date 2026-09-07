@@ -755,6 +755,65 @@ class _Quiet:
         pass
 
 
+def keys(seconds: float = 16.0) -> int:
+    """Measure whether hotkeys are actually reaching the guide.
+
+    "The key works sometimes" was diagnosed twice by reasoning and twice
+    wrongly. It has three possible causes and this separates them: the press
+    never reaches the process, the game does not have focus so the press is
+    refused on purpose, or the loop looks too rarely to see it.
+    """
+    import collections
+    import ctypes
+
+    import win32gui
+
+    from probe_voice import Voice
+    from bt2.hotkeys import KeyWatcher
+    from bt2.windows import game_has_focus, game_windows
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    print(f"game_windows() -> {len(game_windows())} render candidate(s)")
+
+    watcher = KeyWatcher([0x47])
+    voice = Voice()
+    voice.say("Key check. Go to the game. I will ask you to press G three times.")
+    voice.countdown(15, "")
+    seen = 0
+    focus = collections.Counter()
+    titles = collections.Counter()
+    try:
+        for label, span in (("Press G now", 4), ("Again", 4),
+                            ("One more time", 4), ("Stop", 3)):
+            voice.cue(label)
+            end = time.time() + span
+            while time.time() < end:
+                handle = win32gui.GetForegroundWindow()
+                titles[win32gui.GetWindowText(handle)[:40]] += 1
+                focus[game_has_focus()] += 1
+                seen += watcher.take(0x47)
+                time.sleep(0.05)
+    finally:
+        watcher.close()
+        voice.say("Done.")
+        voice.close()
+
+    print(f"\npresses seen by the watcher: {seen} (three were asked for)")
+    print(f"game had focus: {dict(focus)}")
+    for title, count in titles.most_common(3):
+        print(f"  {count:4d} samples in {title!r}")
+    if seen == 0:
+        print("\nNothing reached the process at all: the key is being taken "
+              "before it gets here.")
+    elif not focus.get(True):
+        print("\nPresses arrive but the game never had focus, so they are "
+              "refused on purpose.")
+    else:
+        print("\nPresses arrive and the game has focus, so anything still "
+              "missing is the guide loop, not the keyboard.")
+    return 0
+
+
 def check() -> int:
     """Say what the mod thinks it is looking at, and why.
 
@@ -1037,6 +1096,8 @@ def main(argv: list[str]) -> int:
         return labels(address, lead, expected=expected)
     if command == "check":
         return check()
+    if command == "keys":
+        return keys()
     if command == "dryrun":
         span = 25.0
         for argument in argv[2:]:
