@@ -117,11 +117,12 @@ map scale by teleporting instead of flying -- see Also worth doing.
 
 ## The save file
 
-The player's save is a **fresh new game**: only the first Dragon Adventure
-story event, Saiyan Saga's "Mysterious Alien Warrior", is unlocked. Anything
-needing a second story event -- checking that the event-name address holds for
-more than one event, or capturing a cutscene other than the opening -- has to
-wait until more is unlocked, and cannot be hurried by more analysis.
+As of 2026-09-06 the player has cleared several Dragon Adventure story events
+and reached at least one further map, using the cycle-teleport-try loop above.
+The save is no longer at the beginning, so work that was previously blocked on
+having a second story event -- checking the event-name address holds across
+events, or capturing a cutscene other than the opening -- is now possible and
+should be re-offered rather than assumed blocked.
 
 ## Environment
 
@@ -144,17 +145,19 @@ check` before theorising.** Both faults found on Game Level were invisible from
 outside the mod and obvious in one line of that output, and both were reasoned
 about wrongly first.
 
-### 1. Verifications this session left owed
+### 1. Verifications still owed
 
-All cheap, all need the player at the controls.
+All cheap, all need the player at the controls. Ask before running any of
+them -- see Testing with the player.
 
 - **Game Level, leave and return.** Press Triangle to go back, re-pick the
   event, check it still tracks. Every cursor here is held to being tested on a
   transition it was not derived from; this one has not been. If it goes silent
   afterwards that is the two mirrors disagreeing, which is the design working.
 - **The event name on a second story event.** `0x00D1A782` has been seen for
-  event 00 only. **Blocked** -- see The save file, below. It stays on F12 until
-  then, which is why it is on F12.
+  event 00 only. **No longer blocked**: the player has since cleared several
+  events, so this can be checked whenever they are next on a Game Level screen.
+  It stays on F12 until then, which is why it is on F12.
 - **The Dragon Library marker, in a second run.** It rests on a single visit,
   unlike the main menu's and Options'.
 
@@ -171,7 +174,23 @@ All cheap, all need the player at the controls.
 Follow **Adding a screen** in `docs/memory-map.md`; it is a checklist because
 this session skipped two of its steps and shipped two bugs.
 
-### 3. Dragon Adventure story subtitles
+### 3. Teach the map scale by teleporting, not flying
+
+**The one change that would most improve play.** The story objective is a
+minimap marker with no coordinate-table entry, so reaching it means teleporting
+to table points one at a time and trying the action button. That works and the
+player accepts it, but it is guesswork.
+
+The calibrator learns from pairs of world movement and screen movement and does
+not care how the player moved. Teleport is movement the guide controls, so a
+few short teleports in known directions should teach it the scale without any
+flying. The Jacobian is saved per map profile, so it is a one-time cost per
+map, after which T could go straight to the story marker.
+
+Needs a pause and unpause from the player per step -- four or so per map --
+unless the pause can be driven programmatically, which is worth checking first.
+
+### 4. Dragon Adventure story subtitles
 
 The largest untouched win, and the groundwork is now in place: `extract_text.py`
 gives 2,458 distinct lines, which is the filter that makes the search
@@ -179,8 +198,8 @@ tractable. The one open question is unchanged -- how to tell which line is
 *currently* displayed, since a cutscene has no cursor. Needs one capture session
 inside a cutscene; the method is in the TODO in `docs/memory-map.md`.
 
-Good timing: the save is at the very start, so the opening cutscenes are ahead
-rather than behind.
+Cutscenes continue to appear as the story advances, so a capture session can be
+taken at the next one rather than needing a fresh save.
 
 ### Also worth doing
 
@@ -192,14 +211,7 @@ rather than behind.
   event rearranges markers without the map changing -- that announces
   "Destinations changed" and has not been heard yet. Both fail safe.
 
-- **Teach the map scale by teleporting rather than flying.** This is now the
-  main blocker for story progress. The story objective is only a minimap
-  marker, converting it to world coordinates needs a scale learned from
-  movement, and the player cannot fly. Teleport is movement the guide controls,
-  so a few short teleports in known directions should teach it. Saved per map
-  profile, so once per map. Until then the player reaches story events by
-  teleporting to each table point in turn and trying the action button, which
-  works and which they are content with.
+
 
 - **The pause requirement is the remaining friction in teleport.** It is a real
   safety property -- PINE writes race the emulator's CPU thread -- but it means
