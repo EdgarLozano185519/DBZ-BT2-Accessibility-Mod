@@ -614,6 +614,23 @@ with no emulator and no player involved. See the Dragon Adventure TODO above.
 Captures land in `reference/probe/` and extracted text in `reference/corpus/`,
 both git-ignored. Game memory and game text must never be committed.
 
+**The capture archive was pruned on 2026-09-06**, from 57 RAM dumps to six --
+one per known screen: `auto0` (main menu), `press0` (Options), `pos0` (title),
+`diff0` (Game Level), `library`, `main_after`. Every conclusion the deleted
+ones supported is recorded above with its evidence, and each was verified
+against the live game rather than against the dump.
+
+What the six are kept *for* is the third step of the checklist below: checking
+a new screen's marker against captures of other screens, which is how
+`mc_da_5_lv_csr` was shown to be specific to Game Level. That needs one capture
+per screen, not eighteen of the same one.
+
+What is no longer possible is replaying `fit` or `recorrelate` over the old
+multi-sample sets. If a derived address is ever doubted, re-derive it from a
+fresh capture rather than trusting a dump that no longer exists. All 71
+screenshots were kept: they cost almost nothing and are what make a capture
+interpretable.
+
 ## Known gaps
 
 - Dragon Library and every other submenu need cursor addresses.
