@@ -146,10 +146,58 @@ said "Unknown screen" there instead -- so the story reader, which speaks
 wherever the menu reader cannot, read out the subtitle of every option the
 player browsed past. Which of the two possible causes it was could not be
 settled from a capture, because there is no capture of the main menu taken
-after Dragon Adventure. Both are now handled: a block that moved is found
-again, and a **second named marker matching at once** is written to the log by
-`bt2.speech.note`, naming the screens that collided. The next occurrence
-diagnoses itself.
+after Dragon Adventure. Both were handled, and a **second named marker matching
+at once** was written to the log by `bt2.speech.note`, naming the screens that
+collided.
+
+**The log answered it in one line, the first session after.** It was not the
+block moving -- see the next section. The relocation search has never fired in
+play. It is kept because the reasoning stands and it costs nothing until it is
+needed, but it was insurance, not the fix.
+
+### The Dragon Adventure markers outlive their screens
+
+**Measured 2026-09-07**, from `desktop-20260907-170425-949.log`:
+
+    menus: several screens matched at once, so none was named
+           -- Main Menu, Select Scenario
+
+168 frames of it, while the player was on the main menu and then on Options.
+`mc_da_2_text_off_l` at `0x00D53440` is **still resident after Dragon Adventure
+has been left**, so it named a screen that was not up. Two named markers
+matching is reported as "I do not know", by design, which is what took the main
+menu's name away; and where the main menu's own marker had gone -- on Options
+-- the leftover matched alone and the guide announced "Select Scenario" over
+the Options screen, which is the confident error this project exists to avoid.
+
+Every capture on disk is clean, and that is the trap: the non-Adventure
+captures were all taken in sessions that had never entered Dragon Adventure, so
+"absent on the main menu" was never evidence of anything. **The route in is the
+thing to check.** A marker's exclusivity is only as good as the paths the
+captures took to reach the screens.
+
+The asymmetry runs one way, and both directions are measured:
+
+- The Dragon Adventure markers persist after the mode is left -- the log above.
+- The **main menu's** markers do not. Every capture of a screen inside Dragon
+  Adventure was taken after the main menu had been displayed, since there is no
+  other route in, and its six names are absent from all eight of them.
+
+So `Screen.marker_outlives_screen` records which is which, and a marker known
+to outlive its screen **loses to one that is not**. It is set from what has
+been seen, never from what seems likely: Select Scenario carries it from its
+own sighting, Game Level by the shared mechanism -- its marker is an entry in
+the same per-screen table, written on the way in and not cleared on the way
+out -- and that difference in evidence is recorded in the code beside each.
+
+**This is a mitigation, not the repair.** `0x00D53440` has now been observed on
+a screen that is not Select Scenario, which by this project's own standard
+retires an address -- exactly as `0x00B1007B` was retired when it was found to
+match both Dragon Adventure screens. It is kept only because it is still the
+one address that separates Select Scenario from Game Level. Replacing it needs
+**a capture of the main menu taken after Dragon Adventure has been left**,
+which does not exist and cannot be manufactured offline; that one file would
+show which Dragon Adventure addresses are stale there and which are not.
 
 ## Title screen: New Game / Load Game
 
@@ -376,6 +424,23 @@ survivors are believable because they also **differ from the Game Level
 capture** and are small enough to be an index -- not because the press schedule
 was selective. A third scenario would make this much stronger, and re-checking
 it then is worth the minute it costs.
+
+**A third scenario has now unlocked, and the player reports the screen silent.**
+Reported 2026-09-07. Two rows agree with every counter of period two, so if
+either `0x00D53625` or `0x00B0536C` is parity rather than the index, they part
+company at row 2 for the first time -- and `option()` answers a disagreement
+with silence, permanently, for as long as the player stays on the screen. That
+matches the report exactly, but it is a hypothesis: nothing on disk can
+distinguish the two, since all seven captures hold rows 0 and 1 only.
+
+So the mod now says which it is, from ordinary play rather than a probe
+session. After twenty consecutive disagreements it announces once that the two
+copies disagree and that F12 still reads the screen, and it writes **each
+distinct pair of values** to the log. One copy counting 0, 1, 2 while the other
+falls back to 0 is a parity counter caught in the act, and names the address to
+keep. If instead they agree, the row will simply say "Scenario 3, name not
+known." and the fault is elsewhere -- the log will show that too, by saying
+nothing.
 
 **The labels hold for this save's unlock state only.** The names are artwork,
 like every other UI label here: "Fateful Brothers" and "Saiyan Saga" appear
@@ -644,11 +709,44 @@ matter. The gate used to be `menus.screen is None`, which fails the third:
 a screen recognised from a block that has since moved is named but unreadable,
 and the old test would have silenced the story reader while announcing nothing.
 
-Where it is false there is nothing to prefer -- a cutscene, an unmapped menu,
-Dragon Library, a screen the mod cannot name -- and the prose is then the best
-information available, so it is read. That is a small gain in itself: Dragon
-Library and any unmapped menu now describe themselves as the player browses,
-where before they were silent.
+Where it is false the menu reader has nothing to offer, and the story reader
+gets its turn -- but it now has a rule of its own about what it will say.
+
+**The story reader speaks only out of the scene text buffer.** Changed
+2026-09-07, at the player's request: "no speech on any unmapped menu". Letting
+it read anything on screen meant that on a menu the mod had not been taught --
+Item Shop, Data Center, the story event list -- it announced the highlighted
+option's flavour text instead of naming the option, which is the same
+complaint in a different place.
+
+The two are separable because the game keeps them in different places. A
+scene's `TXT-US-*` file is copied into RAM whole and drawn out of, so a
+cutscene box is always inside that buffer; a menu's prose lives in the menu's
+own allocation. Every capture on disk agrees, with a wide margin:
+
+    menu prose      0x008DED00 (Title) ... 0x00D179C0 (Game Level)   9 captures
+    scene text      0x0109F340 ... 0x0109FD30                       8 captures
+                                                                   + 2 live
+    the gap between them                    3.5 MB
+
+`SCENE_TEXT_START`-`SCENE_TEXT_END` is `0x01000000`-`0x01200000`: both recorded
+scene bases with half a megabyte beneath and one and a half above, and clear of
+every menu observation by nearly three megabytes.
+
+**F12 is deliberately outside this rule.** `read_displayed` still reads
+whatever is on screen, because that line was asked for rather than volunteered.
+So an unmapped menu is silent while browsing and readable on demand, which is
+the arrangement the player asked for in both directions.
+
+**What it costs, and how that gets noticed.** A scene loaded outside the band
+would go unread. The band is therefore not narrowed to the two observed bases,
+and every refusal is written to the log with the address that caused it, once
+per megabyte -- so widening it is a measurement rather than a guess. **The open
+question is the save notice.** "MEMORY CARD slot 1" was spoken at the player's
+request, and where the game keeps it *while it is on screen* has never been
+captured; the string tables sit at `0x0093Cxxx`-`0x00C97xxx`, well below the
+band, so it is likely to have gone quiet. If it has, the log line names the
+address and the rule can be widened knowing exactly what it admits.
 
 Two byte-sized candidates found first, `0x00FFB1C4` and `0x003B29BC`, matched
 the box sequence across all eight captures and were the only two bytes in 31 MB
@@ -1181,11 +1279,18 @@ interpretable.
   at all**. F12 used to announce the first event's name on every event, which
   was worse; that is gone. `0x00D1A782` is a table base rather than a display
   slot -- see the Game Level section.
-- **The main menu has never been captured after Dragon Adventure**, which is
-  the state it stopped being recognised in. The relocation search and the
-  ambiguity log line cover both explanations, but neither has been confirmed
-  as the cause. If it happens again, `snap` the main menu at that moment: one
-  capture settles it.
+- **The main menu has still never been captured after Dragon Adventure**, and
+  that is now the single most valuable capture missing. The log has since shown
+  `mc_da_2_text_off_l` resident there, so the Dragon Adventure markers are
+  known to go stale; what is not known is which *other* Dragon Adventure
+  addresses do, and therefore whether any of them could replace `0x00D53440`.
+  `python menu_probe.py snap mainmenu_after --full` on the main menu, having
+  been inside Dragon Adventure that session, settles it.
+- **Whether Select Scenario's cursor or its mirror is the real index** is
+  unknown, and a third scenario is where it matters. See that screen's section.
+- **Where a save notice lives while it is on screen** has never been captured,
+  so whether automatic narration still reaches one is unknown. See the story
+  reader's scene-buffer rule.
 - Other screens may also be misread as gameplay by the HUD detector, or shadow
   one another the way Title shadowed Game Level. Only the screens with captures
   on disk have been checked, and each new screen needs the same two questions

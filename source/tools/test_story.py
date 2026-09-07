@@ -42,10 +42,27 @@ class CapturePine:
         return self._slice(address, size)
 
 
+# A synthetic RAM block wide enough to hold both the display pointer and the
+# scene text buffer, without carrying the 17 MB that spanning them from the
+# base of EE RAM would cost on every call.
+FAKE_BASE = 0x008C0000
+FAKE_SIZE = 0x00800000
+# Inside the scene text buffer: what a cutscene box looks like.
+SCENE_TARGET = 0x0109F400
+# In a menu's own allocation, near where the real ones sit: what an option's
+# flavour text looks like. Read by F12, never spoken by itself.
+MENU_TARGET = 0x00CA9F40
+
+
 def fake_ram(text: str, pointer: int = story.DISPLAY_POINTER,
-             target: int = 0x00900000, base: int = CAPTURE_BASE,
-             size: int = 0x00A00000, bom: bytes = story.BOM) -> CapturePine:
-    """A block of zeros with one string in it and a pointer at it."""
+             target: int = SCENE_TARGET, base: int = FAKE_BASE,
+             size: int = FAKE_SIZE, bom: bytes = story.BOM) -> CapturePine:
+    """A block of zeros with one string in it and a pointer at it.
+
+    The string lands in the scene text buffer by default, because that is
+    where a cutscene box lives and the reader now speaks nothing else.  Pass
+    `target=MENU_TARGET` for a line drawn by a menu instead.
+    """
     data = bytearray(size)
     data[pointer - base:pointer - base + 4] = struct.pack("<I", target)
     blob = bom + text.encode("utf-16-le") + b"\x00\x00"
@@ -70,25 +87,30 @@ def check(name: str, passed: bool, detail: str = "") -> None:
     print(f"  {mark} {name}" + (f"  -- {detail}" if detail and not passed else ""))
 
 
+# Cutscene boxes, whose text the game loaded into the scene buffer.
+SCENES = {
+    "cut0": "I guess your little pet monsters weren't as strong as you thought.",
+    "cut1": "Heh heh heh... You're getting a bit ahead of yourself, don't you think?",
+    "cut2": "Kyeh!",
+    "cut5": "It seemed to be an easy victory for the Z fighters, but...",
+    "cut6": "...?!",
+}
+
+# Prose a menu was drawing. F12 reads all of it; the reader speaks none of it.
+MENUS = {
+    "auto0": "You can set options during the game. What should I do...?",
+    "diff0": ("Set the Match level to your strength. "
+              "You can always adjust it later!"),
+    "library": ("You can read everyone's profile. "
+                "We can study together if you want!"),
+    "events0": "What's wrong? Have you lost your nerve?",
+}
+
+
 def test_captures() -> None:
     """What the reader says on real RAM, against the screenshots taken with it."""
     print("\nReal captures (expected text read off the screenshots):")
-    expected = {
-        # The cutscene the pointer was found in.
-        "cut0": "I guess your little pet monsters weren't as strong as you thought.",
-        "cut1": "Heh heh heh... You're getting a bit ahead of yourself, don't you think?",
-        "cut2": "Kyeh!",
-        "cut5": "It seemed to be an easy victory for the Z fighters, but...",
-        "cut6": "...?!",
-        # Screens the pointer was never derived from.
-        "auto0": "You can set options during the game. What should I do...?",
-        "diff0": ("Set the Match level to your strength. "
-                  "You can always adjust it later!"),
-        "library": ("You can read everyone's profile. "
-                    "We can study together if you want!"),
-        "events0": "What's wrong? Have you lost your nerve?",
-    }
-    for name, want in expected.items():
+    for name, want in SCENES.items():
         path = PROBE / f"{name}.bin"
         if not path.is_file():
             check(f"{name} present", False, "capture missing")
@@ -98,7 +120,7 @@ def test_captures() -> None:
         reader = story.StoryReader(Recorder())
         reader.poll(pine)
         got = reader.poll(pine)
-        check(f"{name} reads its line", got == want, f"got {got!r}")
+        check(f"{name} is a scene box and is spoken", got == want, f"got {got!r}")
 
     # The title screen draws no prose and the pointer aims at bytes that are
     # not text. Silence is the only correct answer.
@@ -106,6 +128,44 @@ def test_captures() -> None:
     if path.is_file():
         pine = CapturePine(path.read_bytes())
         check("pos0 (title) is refused", story.read_displayed(pine) is None)
+
+
+def test_menus_are_never_narrated() -> None:
+    """A menu's prose is F12's to read and no business of the narrator.
+
+    The player asked for this in as many words after hearing every option's
+    flavour text announced as they browsed: no speech on a menu the mod has
+    not been taught.  These four captures are the whole of the evidence that
+    the two can be told apart, and each one is a screen the display pointer
+    was never derived from.
+    """
+    print("\nMenus: read on request, never announced:")
+    for name, want in MENUS.items():
+        path = PROBE / f"{name}.bin"
+        if not path.is_file():
+            check(f"{name} present", False, "capture missing")
+            continue
+        pine = CapturePine(path.read_bytes())
+        check(f"F12 still reads {name}", story.read_displayed(pine) == want,
+              f"got {story.read_displayed(pine)!r}")
+        voice = Recorder()
+        reader = story.StoryReader(voice)
+        for _ in range(4):
+            reader.poll(pine)
+        check(f"{name} is never announced by itself", voice.said == [],
+              f"said {voice.said}")
+        _, pointer = story.displayed(pine)
+        check(f"{name} prose sits below the scene buffer",
+              pointer < story.SCENE_TEXT_START, f"at 0x{pointer:08X}")
+
+    for name in SCENES:
+        path = PROBE / f"{name}.bin"
+        if not path.is_file():
+            continue
+        _, pointer = story.displayed(CapturePine(path.read_bytes()))
+        check(f"{name} sits inside the scene buffer",
+              story.SCENE_TEXT_START <= pointer < story.SCENE_TEXT_END,
+              f"at 0x{pointer:08X}")
 
 
 def test_refusals() -> None:
@@ -147,9 +207,12 @@ def test_accepts() -> None:
     check("line breaks become one spoken line",
           story.read_displayed(fake_ram("Goku and his \nfriends were \nhappy."))
           == "Goku and his friends were happy.")
-    # The player asked for these to be spoken.
+    # The player asked for these to be spoken. Whether they still are depends
+    # on where the game keeps one while it is on screen, which has never been
+    # captured -- see the note on SCENE_TEXT_START. F12 reads it either way.
     check("a save notice is prose too",
-          story.read_displayed(fake_ram("MEMORY CARD slot 1"))
+          story.read_displayed(fake_ram("MEMORY CARD slot 1",
+                                        target=MENU_TARGET))
           == "MEMORY CARD slot 1")
     # "#16" and "#18" are android names, not layout codes.
     check("a hash mid-line is a name, not markup",
@@ -219,6 +282,7 @@ def test_echo_never_raises() -> None:
 def main() -> int:
     print("Story reader, offline checks")
     test_captures()
+    test_menus_are_never_narrated()
     test_refusals()
     test_accepts()
     test_behaviour()

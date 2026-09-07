@@ -308,6 +308,132 @@ def test_the_two_cursor_copies() -> None:
           menu.speaker.said == ["Main Menu"], f"said {menu.speaker.said}")
 
 
+class PatchedPine:
+    """A capture with bytes written over it at chosen addresses."""
+
+    def __init__(self, inner, patches: dict[int, bytes]):
+        self.inner = inner
+        self.patches = patches
+
+    def _overlay(self, address: int, data: bytearray) -> bytes:
+        for at, blob in self.patches.items():
+            start = max(address, at)
+            end = min(address + len(data), at + len(blob))
+            if start < end:
+                data[start - address:end - address] = blob[start - at:end - at]
+        return bytes(data)
+
+    def read8(self, address: int) -> int:
+        return self._overlay(address, bytearray([self.inner.read8(address)]))[0]
+
+    def read32(self, address: int) -> int:
+        return int.from_bytes(
+            bytes(self.read8(address + n) for n in range(4)), "little"
+        )
+
+    def read_aligned_range(self, address: int, size: int, allow_large=False):
+        block = bytearray(
+            self.inner.read_aligned_range(address, size, allow_large))
+        return self._overlay(address, block)
+
+
+def test_a_stale_marker_loses() -> None:
+    """A marker left behind by a screen that has gone must not win.
+
+    This is the fault the player hit. Backing out of Dragon Adventure leaves
+    `mc_da_2_text_off_l` resident at 0x00D53440, so on the main menu two named
+    screens matched, detection refused to name either, and the story reader --
+    which speaks wherever the menu reader cannot -- read out the subtitle of
+    every option they browsed past. On the Options screen the same leftover
+    matched alone and announced "Select Scenario" over it.
+    """
+    print("\nA Dragon Adventure marker left resident after the mode was left:")
+    base = load("auto0")
+    if base is None:
+        check("auto0 present", False, "capture missing")
+        return
+    scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
+    at, name = scenario.primary.first
+    stale = PatchedPine(base, {at: name})
+
+    check("the leftover really does match", scenario.present(stale))
+    menu = reader()
+    found, trusted = menu._detect(stale)
+    check("the main menu is still named", found is not None
+          and found.name == "Main Menu", f"got {found.name if found else None!r}")
+    check("and its cursor is still read", trusted)
+
+    menu = reader()
+    for tick in range(4):
+        menu.poll(stale, tick * 0.1)
+    check("so the option is spoken, not the subtitle",
+          menu.speaker.said[:2] == ["Main Menu", "Options"],
+          f"said {menu.speaker.said}")
+
+    # The same leftover on Options, where it used to name the wrong screen.
+    options = load("press0")
+    if options is not None:
+        stale = PatchedPine(options, {at: name})
+        found, _ = reader()._detect(stale)
+        check("Options is not renamed Select Scenario",
+              found is not None and found.name == "Options",
+              f"got {found.name if found else None!r}")
+
+    # And the screen itself must still work: outranked is not ignored.
+    real = load("events0")
+    if real is not None:
+        found, trusted = reader()._detect(real)
+        check("Select Scenario still names itself when it is up",
+              found is not None and found.name == "Select Scenario")
+        check("and its cursor is still read", trusted)
+
+
+def test_a_silent_row_explains_itself() -> None:
+    """Two cursor copies that will not agree must not just go quiet.
+
+    Select Scenario's cursor was derived on a list of two entries, where
+    position is only parity, so a counter with period two fits the presses as
+    well as the real index does. A third scenario is exactly where that would
+    come apart, and the failure would be permanent silence on the new row --
+    indistinguishable from the mod being broken.
+    """
+    print("\nWhen a screen's two copies of the cursor disagree:")
+    pine = load("events0")
+    if pine is None:
+        check("events0 present", False, "capture missing")
+        return
+    scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
+    # The near copy says row 3, the far one is stuck at parity 0.
+    disagreeing = PatchedPine(pine, {scenario.cursor: b"\x02",
+                                     scenario.mirror: b"\x00"})
+    raw, label, settled = scenario.option(disagreeing)
+    check("the read is unsettled, and no row is named",
+          not settled and label is None)
+
+    menu = reader()
+    for tick in range(menus.UNSETTLED_BEFORE_SAYING + 4):
+        menu.poll(disagreeing, tick * 0.1)
+    said = menu.speaker.said
+    check("the screen is named first", said[:1] == ["Select Scenario"],
+          f"said {said}")
+    explains = [line for line in said if "disagree" in line]
+    check("the silence is explained exactly once", len(explains) == 1,
+          f"said {said}")
+    check("and F12 is offered as the way through",
+          bool(explains) and "F12" in explains[0])
+
+    # Agreement must still be the quiet, ordinary case.
+    agreeing = PatchedPine(pine, {scenario.cursor: b"\x02",
+                                  scenario.mirror: b"\x02"})
+    menu = reader()
+    for tick in range(menus.UNSETTLED_BEFORE_SAYING + 4):
+        menu.poll(agreeing, tick * 0.1)
+    check("a third scenario with both copies agreeing says its position",
+          menu.speaker.said == ["Select Scenario",
+                                "Scenario 3, name not known."],
+          f"said {menu.speaker.said}")
+
+
 def test_a_moved_block() -> None:
     """A menu whose own block has moved is still named, and found again.
 
@@ -377,6 +503,8 @@ def main() -> int:
     test_prefers_the_option()
     test_f12_reaches_every_screen()
     test_the_two_cursor_copies()
+    test_a_stale_marker_loses()
+    test_a_silent_row_explains_itself()
     test_a_moved_block()
     test_unmoved_captures_are_not_searched()
 

@@ -12,11 +12,11 @@ Menus speak through NVDA, driven by the game's own memory:
 
 - **Title screen** -- New Game / Load Game.
 - **Main Menu** -- all ten options, Dragon Adventure through Dragon Library.
-  It stopped being recognised at some point on 2026-09-07 and read out the
-  option subtitles instead; it is now recognised from two separate blocks,
-  finds its own block again if it has moved, and cross-checks its cursor
-  against a second copy. **Not yet confirmed in play** -- see item 1 under
-  Next steps for exactly what to listen for.
+  It stopped being recognised on 2026-09-07 and read out the option subtitles
+  instead. The cause is now known and measured: a Select Scenario marker that
+  is still resident after Dragon Adventure has been left, colliding with it.
+  A marker known to outlive its screen now loses to one that is not.
+  **Not yet confirmed in play.**
 - **Options** -- all five entries, Save and Load through Exit. The game keeps
   two copies of this cursor and both are read; if they ever disagree the mod
   stays silent rather than guess.
@@ -74,17 +74,25 @@ therefore never talk over one another. Press **F12** for the prose on screen. If
 a block has moved since these notes were written, the mod says "Looking for the
 subtitles." or "Looking for the menu.", finds it again, and carries on.
 
-`bt2/story.py` runs at the same point and for the same reason, and **the menu
-reader decides whether it speaks**: `MenuReader.reads_options()` is true when
-the mod has named the screen, that screen has a mapped cursor, and the evidence
-that named it also says where that cursor is. Where it is true the option is
-spoken and the story reader stays quiet; where it is false -- a cutscene, an
-unmapped menu, Dragon Library -- the prose is all there is, so it is read.
+`bt2/story.py` runs at the same point and for the same reason, and there are
+**two rules between them**, because one was not enough.
 
-That boundary is the whole of the 2026-09-07 fix. The pointer reads a mapped
-menu's own subtitle just as happily as it reads a cutscene, so with the main
-menu unrecognised the story reader announced a subtitle for every option the
-player browsed past and never named the option itself.
+The first: `MenuReader.reads_options()` is true when the mod has named the
+screen, that screen has a mapped cursor, and the evidence that named it also
+says where that cursor is. Where it is true the option is spoken and the story
+reader stays quiet.
+
+The second: **the story reader speaks only out of the scene text buffer.** The
+first rule left it reading menus the mod had not been taught -- announcing the
+highlighted option's flavour text on the Item Shop or the story event list --
+which the player asked to be rid of. A cutscene's text is loaded into a buffer
+around `0x0109F000`; a menu's prose lives in the menu's own allocation, three
+and a half megabytes below the nearest scene box in every capture on disk. So
+an unmapped menu is now silent while browsing.
+
+**F12 is outside both rules** and reads whatever is on screen, mapped or not,
+named or not. That is the whole arrangement: menus are read on request, the
+story is read as it happens.
 
 ## Releasing
 
@@ -140,8 +148,8 @@ numpy/scipy/Pillow) for testing menus without the full guide.
 **The offline suites need no emulator, no game and no player**, and are the
 first thing to run after changing any of this:
 
-    ..\..\.venv\Scripts\python.exe test_menus.py    # 101 checks, 21 captures
-    ..\..\.venv\Scripts\python.exe test_story.py    # 31 checks
+    ..\..\.venv\Scripts\python.exe test_menus.py    # 113 checks, 21 captures
+    ..\..\.venv\Scripts\python.exe test_story.py    # 44 checks
     ..\..\.venv\Scripts\python.exe test_mapcal.py   # 30 checks
 
 **From source, for development**, from `source/tools`:
@@ -179,7 +187,7 @@ loop was acceptable.
 
 **The guesswork is what C removes.** It has been run twice in play on the Blue
 landmass map, and T reached the story marker from it. Whether it holds on a map
-other than that one is the open question -- see item 5 under Next steps.
+other than that one is the open question -- see item 6 under Next steps.
 
 ## The save file
 
@@ -250,18 +258,30 @@ Deleting them would remove a moving part and the "Looking for the subtitles."
 pause. It would also be a change to something that works, so it is still the
 player's call rather than the next session's.
 
-**3. Should a stray line be tolerated while the gate is unproven?** The
-stale-pointer guard is judged, not proven -- see item 6. The alternative is to
-read story text only after positively identifying a loaded scene file, which
-would be stricter but would also silence save notices, which the player asked
-for. Left permissive on purpose; revisit if a stray line is ever heard.
+**3. Should a save notice still be spoken?** *This one is new and is the only
+open question from the 2026-09-07 changes.* Automatic narration is now
+restricted to the scene text buffer, which is what keeps unmapped menus quiet.
+"MEMORY CARD slot 1" is not a scene box, and where the game keeps it while it
+is on screen has never been captured -- the string tables sit well below the
+band -- so it has probably gone quiet with them. The player asked for those
+notices. Three ways out, in increasing cost: leave it, and read a save notice
+on F12 like any other screen text; capture one and widen the rule by its real
+address; or drop the band and accept menus talking again. **Nothing will change
+here until this is answered**, and the log now records the address of anything
+refused, so answering it later costs one play session rather than a probe.
 
-**4. Should this be stamped as a release?** The worker is rebuilt and deployed
+**4. Should a stray line be tolerated while the gate is unproven?** The
+stale-pointer guard is judged, not proven -- see item 7. The scene-buffer rule
+above has incidentally made this much stricter: a stale pointer left aiming at
+menu text after a scene ends is now refused by address as well as by content.
+The remaining exposure is a stale pointer still inside the scene buffer.
+
+**5. Should this be stamped as a release?** The worker is rebuilt and deployed
 but `BUILD-INFO.json` and `SHA256SUMS.txt` still describe the previous build.
 Stamping is one command and is the player's call, not something to do because
 the code changed.
 
-**5. Should the 700 MB of captures be pruned?** `reference/probe` now holds
+**6. Should the 700 MB of captures be pruned?** `reference/probe` now holds
 `cut0`-`cut7` at 31 MB each. The archive rule is one capture per screen; five
 of the eight are distinct boxes and three are duplicates. Keeping them all
 until the stale-pointer gate is settled is deliberate -- they are the evidence.
@@ -277,39 +297,75 @@ check` before theorising.** Both faults found on Game Level were invisible from
 outside the mod and obvious in one line of that output, and both were reasoned
 about wrongly first.
 
-### 1. The main menu goes unrecognised, and the cause is not yet proven
+### 1. The Select Scenario marker is refuted, and needs replacing
 
-**Fixed as far as it can be offline on 2026-09-07, but not confirmed in play.**
-This is what the player heard as "menus read the subtitles instead of the
-options": with the main menu unrecognised the guide said "Unknown screen", and
-the story reader -- which speaks wherever the menu reader cannot -- read out the
-subtitle of every option they browsed past.
+**The cause of the main menu going quiet is now known**, and it was not the
+main menu. From `desktop-20260907-170425-949.log`, 168 times over:
 
-The logs say when it started. In the three sessions where "Main Menu" was
-announced, the screen had been reached from the title. In every session after
-Dragon Adventure had been entered it was never announced again. Two explanations
-fit and **there is no capture of the main menu taken after Dragon Adventure**,
-so neither can be settled from what is on disk:
+    menus: several screens matched at once, so none was named
+           -- Main Menu, Select Scenario
 
-- **Its block moved.** `0x00AA15EC` is in the dynamic region and the
-  neighbouring subtitle block is already known to move between runs.
-- **A second named marker is also matching**, which detection reports as "I do
-  not know" by design.
+`mc_da_2_text_off_l` at `0x00D53440` is **still resident after Dragon Adventure
+has been left**. On the main menu it collided with the real marker and
+detection refused to name either, which is the safety rule working on bad
+input; the story reader then read out the subtitle of every option the player
+browsed past. On Options, where the main menu's marker had gone, the leftover
+matched alone and the guide announced **"Select Scenario" over the Options
+screen**.
 
-Both are now handled. A second signature in a longer-lived block names the
-screen when the near marker has gone, a bounded search finds where the near
-block went, and an ambiguous match writes the colliding screen names to the log
-without saying anything aloud. Details under **A screen can be recognised twice
-over** in `docs/memory-map.md`.
+Every capture on disk is clean, and that is the trap worth remembering: the
+non-Adventure captures were all taken in sessions that had never entered Dragon
+Adventure, so "absent on the main menu" was never evidence of anything. **A
+marker's exclusivity is only as good as the routes the captures took.**
 
-**What is still owed is one live run.** If the main menu now speaks its options,
-say which of the two paths ran: the log will contain either "Main Menu moved by"
-or "several screens matched at once". If it still does not, `python
-menu_probe.py check` on that screen prints the whole picture in one go, and
-`python menu_probe.py snap mainmenu_after` at that moment is the capture that
-has been missing all along.
+**The mitigation is in.** A marker known to outlive its screen loses to one
+that is not, and which markers those are is recorded from what has been seen.
+Both errors above are covered, and `test_menus.py` holds them.
 
-### 2. The event name is gone from F12, and reading it properly still needs an index
+**The repair is not.** By this project's own standard `0x00D53440` is now a
+retired address -- it has been seen naming a screen that was not up, exactly as
+`0x00B1007B` was when it matched both Dragon Adventure screens. It is kept only
+because it is still the one address that separates Select Scenario from Game
+Level. Replacing it needs **a capture of the main menu taken after Dragon
+Adventure has been left**, which has never existed:
+
+    python menu_probe.py snap mainmenu_after --full
+
+Stop the guide first -- PINE serves one client at a time. That one file shows
+which Dragon Adventure addresses are stale on the main menu and which are not,
+and a marker chosen from the survivors would be exclusive on the evidence
+rather than by precedence.
+
+**The relocation search built for the other explanation has never fired**, in
+any session. It is kept because the reasoning stands and it costs nothing until
+it is needed, but it was insurance and not the fix.
+
+### 2. The third scenario is silent, and the mod will now say why
+
+Reported in play 2026-09-07: a third scenario has unlocked and the row does not
+speak. The mod was built for this -- it should say "Scenario 3, name not
+known." -- so something upstream of that is refusing.
+
+The likeliest cause was written down before it happened. The cursor was derived
+on a list of **two** entries, where position is only parity, so any counter of
+period two fits the press schedule as well as the real index does; that was
+recorded at the time as the thing to re-check when a third scenario appeared.
+If one of `0x00D53625` and `0x00B0536C` is parity, they part company at row 2
+for the first time, and `option()` answers a disagreement with silence -- for
+as long as the player stays on the screen. All seven captures hold rows 0 and 1
+only, so nothing on disk can separate them.
+
+So the mod now produces the evidence from ordinary play. After twenty
+consecutive disagreements it says once that the two copies disagree and that
+F12 still reads the screen, and it logs **each distinct pair of values**. One
+copy counting 0, 1, 2 while the other falls back to 0 is a parity counter
+caught in the act, and names the address to keep.
+
+**What is owed:** visit Select Scenario, move up and down the three rows, and
+send the log. If the two agree throughout, the log will say nothing and the
+fault is elsewhere -- which is also an answer.
+
+### 3. The event name is gone from F12, and reading it properly still needs an index
 
 `0x00D1A782` was recorded as the Game Level event name. It is not a display
 slot -- it is entry 0 of a table of event names on a `0x40` granule, and it
@@ -333,7 +389,7 @@ continuation fragment -- "n!", "pe Baby", "use" -- and would speak it with the
 same confidence as the bug it was meant to fix. The table has to be walked;
 `story_probe.names` is the reference implementation and needs no player.
 
-### 3. Verifications still owed
+### 4. Verifications still owed
 
 All cheap, all need the player at the controls. Ask before running any of
 them -- see Testing with the player.
@@ -354,7 +410,7 @@ them -- see Testing with the player.
 - **The Dragon Library marker, in a second run.** It rests on a single visit,
   unlike the main menu's and Options'.
 
-### 4. Map the remaining screens
+### 5. Map the remaining screens
 
 - **The story event list**, inside Dragon Adventure -- the screen between
   Select Scenario and Game Level, where the player is still choosing blind.
@@ -372,7 +428,7 @@ them -- see Testing with the player.
 Follow **Adding a screen** in `docs/memory-map.md`; it is a checklist because
 this session skipped two of its steps and shipped two bugs.
 
-### 5. Teleport-driven calibration: works. Does it work on a second map?
+### 6. Teleport-driven calibration: works. Does it work on a second map?
 
 `bt2/mapcal.py` on the **C** key. Six commanded hops -- a probe out, back, then
 a closed square -- each one a known world displacement, so the Jacobian is
@@ -436,7 +492,7 @@ play and by reading, not by a check that would catch a regression. There is no
 `test_guide.py` and building the fakes for one is a real piece of work; worth
 doing before that method is next changed.
 
-### 6. Finish the story reader
+### 7. Finish the story reader
 
 The reader ships and works. What is left is one unproven guard and three
 features the same discovery has made cheap.
@@ -535,6 +591,32 @@ manufactured offline.
 
 ## Recently finished
 
+### 2026-09-07: the leftover marker, and menus made quiet
+
+- **The main menu's silence was a stale marker, and the log said so** the first
+  session after the diagnostic went in: `mc_da_2_text_off_l` still resident
+  after Dragon Adventure had been left, colliding with the real marker 168
+  frames in a row. It had also been announcing "Select Scenario" over the
+  Options screen. A marker known to outlive its screen now loses to one that is
+  not, recorded per screen from what has actually been seen.
+- **Every capture on disk was clean, and that was the trap.** The
+  non-Adventure captures were all taken in sessions that had never entered
+  Dragon Adventure. A marker's exclusivity is only as good as the routes the
+  captures took to reach the screens.
+- **The story reader speaks only out of the scene text buffer**, at the
+  player's request: no speech on a menu the mod has not been taught. Cutscene
+  text is loaded into a buffer around `0x0109F000`; menu prose lives in the
+  menu's own allocation, three and a half megabytes below the nearest scene box
+  in every capture. F12 is outside the rule and still reads either.
+- **A silent row now explains itself.** Two cursor copies that will not agree
+  used to mean permanent silence, indistinguishable from a broken mod. The mod
+  says so once and logs each distinct pair of values, which is what will
+  identify Select Scenario's real cursor now that a third scenario has
+  unlocked.
+- **Diagnostics no longer repeat.** The first collision note wrote the same
+  line 168 times in one session.
+- 113 checks in `test_menus.py`, 44 in `test_story.py`, all offline.
+
 ### 2026-09-07: menus speak again, and F12 answers everywhere
 
 - **The menu option now wins over the story reader, explicitly.** One method,
@@ -561,7 +643,7 @@ manufactured offline.
   names the colliding screens; a relocated block reports how far it moved.
   Neither is spoken. Two screen faults have now been reasoned about wrongly
   before being measured, and the log is the cheapest place to stop that.
-- **`test_menus.py` is new**: 101 offline checks over all 21 captures, with no
+- **`test_menus.py` is new**: offline checks over all 21 captures, with no
   emulator and no player. Every screen's markers must match its own captures
   and no other, in both directions; F12 must read the line the screenshot
   shows; and a synthetically moved block must be found again.

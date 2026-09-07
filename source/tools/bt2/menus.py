@@ -41,6 +41,7 @@ Addresses and their evidence are recorded in docs/memory-map.md.
 
 from __future__ import annotations
 
+import collections
 import ctypes
 
 from .hotkeys import desktop_input_allowed
@@ -58,6 +59,16 @@ SUBTITLE_SEARCH_STEP = 0x80000
 SUBTITLE_SEARCH_INTERVAL = 20.0
 # A line long enough that ten of them at fixed spacing cannot be chance.
 MIN_ANCHOR_CHARACTERS = 8
+
+# How many distinct diagnostic lines to remember, so none repeats.
+NOTED_LINES = 16
+
+# How many consecutive frames the two copies of a cursor may disagree before
+# the mod says so out loud. One disagreement is a read landing mid-update and
+# is expected; a run of them means the two addresses no longer mean the same
+# thing, and the player is owed an explanation rather than silence. At roughly
+# seven passes a second this is about three seconds.
+UNSETTLED_BEFORE_SAYING = 20
 
 # The same rate limit, for the search that relocates a menu's own block.
 SCREEN_SEARCH_INTERVAL = 20.0
@@ -135,7 +146,8 @@ class Screen:
     def __init__(self, name, marker_address, marker, cursor=None, stride=1,
                  labels=None, subtitles=None, mirror=None, mirror_stride=1,
                  in_adventure=False, weak_marker=False, unknown_row=None,
-                 alternate=None, search_band=None):
+                 alternate=None, search_band=None,
+                 marker_outlives_screen=False):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -168,6 +180,12 @@ class Screen:
         # Evidence from a second allocation, which outlives the first. It names
         # the screen; it never vouches for the cursor.
         self.alternate = alternate
+        # True where the marker has been seen still resident after the screen
+        # was left. Such a marker is real evidence that the screen was up at
+        # some point and no evidence that it is up now, so it loses to any
+        # marker not known to do this. Set from what was observed, never from
+        # what seems likely -- see MenuReader._detect.
+        self.marker_outlives_screen = marker_outlives_screen
         # Where to look for the near block when it has moved, as (start, end).
         # Narrow on purpose: the marker name occurs elsewhere in RAM, and a
         # band wide enough to catch every copy could not tell them apart.
@@ -429,6 +447,12 @@ SCREENS = [
         {0: 0x00D179C2, 1: 0x00D179C2, 2: 0x00D179C2},
         mirror=0x00432D71, mirror_stride=4,
         in_adventure=True,
+        # Not observed stale itself, but it is an entry in the same per-screen
+        # table as Select Scenario's, written on the way into Dragon Adventure
+        # and demonstrably not cleared on the way out. Flagged by that shared
+        # mechanism rather than by its own sighting, which is weaker evidence
+        # and is why this is recorded rather than assumed.
+        marker_outlives_screen=True,
     ),
     # Select Scenario, the list of Dragon Adventure scenarios, reached before
     # the story events and the Game Level chooser. A vertical list that wraps.
@@ -457,6 +481,14 @@ SCREENS = [
         {0: "Saiyan Saga", 1: "Fateful Brothers"},
         mirror=0x00B0536C, mirror_stride=1,
         in_adventure=True,
+        # **Observed still resident after Dragon Adventure was left**, on the
+        # main menu and on Options, for 168 consecutive frames of the
+        # 2026-09-07 17:04 session. That is what took the main menu's name
+        # away and handed its option subtitles to the story reader, and it
+        # announced "Select Scenario" over the Options screen besides. The
+        # address is kept because it is the only one that separates this
+        # screen from Game Level, and it is now outranked rather than trusted.
+        marker_outlives_screen=True,
         # The one screen here whose length is not ours to know. A row we have
         # no name for means the list has grown, so say which row it is and
         # admit the name is missing -- and treat hearing this as a sign that
@@ -506,6 +538,14 @@ class MenuReader:
         # player stayed on the screen, saying "Looking for the menu." each
         # time. Once per visit is enough; leaving and returning tries again.
         self._searched: str | None = None
+        # Diagnostics already written this session, so a fault that lasts a
+        # thousand frames costs the log one line rather than a thousand.
+        self._noted: collections.deque = collections.deque(maxlen=NOTED_LINES)
+        # Consecutive reads where a screen's two copies of the cursor
+        # disagreed. One is a half-written frame; a run of them is a fault.
+        self._unsettled = 0
+        self._announced_unsettled = False
+        self._last_disagreement: tuple[int, int] | None = None
         # How far the subtitle block has moved from the recorded addresses.
         # Zero until proven otherwise: the recorded addresses are right in the
         # run they came from, and searching costs the player a pause.
@@ -560,6 +600,19 @@ class MenuReader:
                 return False  # A dropped read must never suspend guidance.
         return False
 
+    def _note_once(self, text: str) -> None:
+        """Log a diagnostic, but not the same one on every frame.
+
+        The first run of the collision note wrote the same line 168 times in
+        one session, which is a log nobody will read to the end of. What
+        matters is that it happened and what it said, not how many frames it
+        lasted.
+        """
+        if text in self._noted:
+            return
+        self._noted.append(text)
+        note(text)
+
     def _match(self, pine, screen) -> tuple[bool, bool]:
         """(is this screen up, does the evidence locate its cursor)."""
         shift = self._shifts.get(screen.name, 0)
@@ -587,6 +640,16 @@ class MenuReader:
         name matches, and two names matching at once means the mod does not
         know where it is and says so.
 
+        **A marker known to outlive its screen loses to one that is not.**
+        Measured, not assumed, and in both directions. The Dragon Adventure
+        markers persist after the mode is left: on 2026-09-07 the log recorded
+        `mc_da_2_text_off_l` still resident on the main menu and on Options,
+        168 frames of it, which is what took the main menu's name away and gave
+        the option subtitles to the story reader. The main menu's own names go
+        the other way -- every capture of a screen inside Dragon Adventure was
+        taken after the main menu had been displayed, since there is no other
+        route in, and its names are absent from all eight of them.
+
         Returns the screen and whether its cursor may be read.
         """
         named = []
@@ -596,14 +659,26 @@ class MenuReader:
             present, trusted = self._match(pine, screen)
             if present:
                 named.append((screen, trusted))
+
+        fresh = [pair for pair in named if not pair[0].marker_outlives_screen]
+        if fresh and len(fresh) < len(named):
+            self._note_once(
+                "menus: ignoring a marker that outlives its screen -- "
+                + ", ".join(s.name for s, _ in named if s.marker_outlives_screen)
+                + " while " + ", ".join(s.name for s, _ in fresh) + " is up"
+            )
+            named = fresh
+
         if len(named) == 1:
             return named[0]
         if named:
             # Written to the log, not spoken. Which screens collided is the one
             # fact that separates "the marker moved" from "a stale marker is
-            # still resident", and guessing between those wasted a session.
-            note("menus: several screens matched at once, so none was named -- "
-                 + ", ".join(screen.name for screen, _ in named))
+            # still resident", and guessing between those wasted a session --
+            # then answered it in one line the first time a player hit it.
+            self._note_once(
+                "menus: several screens matched at once, so none was named -- "
+                + ", ".join(screen.name for screen, _ in named))
             return None, False
 
         weak = [s for s in SCREENS if s.weak_marker and s.present(pine)]
@@ -628,6 +703,9 @@ class MenuReader:
             self.screen = found
             self.cursor_trusted = trusted
             self._searched = None
+            self._unsettled = 0
+            self._announced_unsettled = False
+            self._last_disagreement = None
             self._spoken = self._settled = self._pending = None
             if found is not None:
                 self._unknown_since = None
@@ -667,7 +745,9 @@ class MenuReader:
         if not settled:
             # Read again from scratch rather than committing this value.
             self._pending = None
+            self._report_disagreement(pine)
             return
+        self._unsettled = 0
 
         # Require a value to repeat before trusting it. A read can land while
         # the game is updating the cursor, and announcing that half-written
@@ -693,6 +773,58 @@ class MenuReader:
         if label != self._spoken:
             self._spoken = label
             self.speaker.say(label)
+
+    def _report_disagreement(self, pine) -> None:
+        """Explain a cursor whose two copies will not agree, once.
+
+        A single disagreement is a read landing while the game is updating,
+        and answering it with silence is right.  A run of them is not: the two
+        addresses have stopped meaning the same thing, and the screen then
+        stays silent for as long as the player is on it with nothing to
+        distinguish that from a broken mod.  Which is the fault this project
+        exists to avoid, so it is said out loud.
+
+        The two values go to the log as well.  Select Scenario's cursor was
+        derived on a list of two entries, where position is only parity, so any
+        counter with period two fits the press schedule as well as the real
+        index does -- recorded at the time as the weakness to re-check when a
+        third scenario unlocked.  If that is what this is, the log now answers
+        it from ordinary play: one copy will count 0, 1, 2 and the other will
+        fall back to 0.
+        """
+        screen = self.screen
+        if screen is None or screen.mirror is None:
+            return
+        self._unsettled += 1
+        if self._unsettled < UNSETTLED_BEFORE_SAYING:
+            return
+        try:
+            shift = self._shifts.get(screen.name, 0)
+            near = pine.read8(screen.cursor + shift)
+            far = pine.read8(screen.mirror)
+        except Exception:
+            return
+        self._note_once(
+            f"menus: {screen.name} cursor copies disagree -- "
+            f"0x{screen.cursor + shift:08X} reads {near} (stride "
+            f"{screen.stride}), 0x{screen.mirror:08X} reads {far} (stride "
+            f"{screen.mirror_stride})"
+        )
+        # Every distinct pair, but only once each: the sequence is the
+        # evidence -- one copy counting 0, 1, 2 while the other falls back to 0
+        # is a parity counter caught in the act -- and a line per frame would
+        # bury it. The first run of the collision note wrote 168 identical
+        # lines in one session.
+        if (near, far) != self._last_disagreement:
+            self._last_disagreement = (near, far)
+            note(f"menus: {screen.name} disagreement, near {near} far {far}")
+        if not self._announced_unsettled:
+            self._announced_unsettled = True
+            self.speaker.say(
+                f"{screen.name}: the two copies of the cursor disagree, so "
+                "the highlighted row cannot be read. F12 still reads the "
+                "screen."
+            )
 
     def _locate_block(self, pine, screen, now: float) -> bool:
         """Look for a screen's own block, when only its far name matched.
@@ -808,6 +940,9 @@ class MenuReader:
         self.screen = None
         self.cursor_trusted = False
         self._searched = None
+        self._unsettled = 0
+        self._announced_unsettled = False
+        self._last_disagreement = None
         self._spoken = self._settled = self._pending = None
         self._unknown_since = None
         self._announced_unknown = False
