@@ -56,6 +56,42 @@ def cardinal(delta_x: float, delta_z: float) -> tuple[str, str]:
     return _COMPASS[index]
 
 
+def relative_angle(delta_x: float, delta_z: float,
+                   forward: tuple[float, float]) -> float | None:
+    """Degrees from the way the player is pointing to a world offset.
+
+    Negative is to their left, positive to their right, zero straight ahead.
+    """
+    length = math.hypot(forward[0], forward[1])
+    if length < 0.5 or (delta_x == 0.0 and delta_z == 0.0):
+        return None
+    target = math.degrees(math.atan2(delta_x, delta_z))
+    facing = math.degrees(math.atan2(forward[0], forward[1]))
+    return (target - facing + 180.0) % 360.0 - 180.0
+
+
+def turn_phrase(angle: float) -> str:
+    """Say which way to turn, in words that can be acted on immediately.
+
+    Deliberately coarse. A blind player flying at speed can act on "hard
+    right"; they cannot act on "seventy-two degrees right" without doing
+    arithmetic they have no reason to do.  The bands are wide enough that a
+    small drift does not change the wording.
+    """
+    if abs(angle) <= 15.0:
+        return "straight ahead"
+    if abs(angle) >= 165.0:
+        return "directly behind you"
+    side = "right" if angle > 0.0 else "left"
+    if abs(angle) <= 40.0:
+        return f"slightly {side}"
+    if abs(angle) <= 75.0:
+        return f"to your {side}"
+    if abs(angle) <= 120.0:
+        return f"hard {side}"
+    return f"behind you, to the {side}"
+
+
 @dataclass(frozen=True)
 class Cue:
     """One navigation instruction, in the fixed output structure."""

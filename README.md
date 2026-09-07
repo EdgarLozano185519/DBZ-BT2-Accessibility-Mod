@@ -72,9 +72,16 @@ finds it again, and carries on.
 from the live minimap, tracks your position, and uses stereo direction and pitch
 plus spoken messages to steer you there.
 
+**G says which way to turn.** The tones are in world directions — stereo left
+and right mean west and east — which only helps if you can see which way you
+are pointing. G reads your actual heading out of the game and says the offset
+as a turn instead: "Objective, slightly right." It speaks only when pressed, so
+it never talks over the game or the tones.
+
 With the game focused:
 
 - **F12** — the game's own text for the current screen
+- **G** — which way to turn for the objective, from where you are pointing
 - **R** — repeat the current destination
 - **N** / **B** — next / previous destination
 - **T** — request a teleport, then follow the spoken instructions

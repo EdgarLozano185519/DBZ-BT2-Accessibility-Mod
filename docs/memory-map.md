@@ -280,6 +280,38 @@ the corpus with `python extract_text.py`.
   "Unknown screen" there, which is the intended behaviour: naming a screen it
   cannot read would be worse than admitting it.
 
+## The player's facing, on the world map
+
+Guidance tones are stereo: left and right. On the world map they were panned by
+the *world* offset -- screen right on the minimap is east -- so the tone said
+"the objective is east" whether the player was flying east, west or backwards.
+A sighted player reads their heading off the screen and the cue works. A blind
+player cannot, and the cue is unusable. Indoors this was never a problem,
+because local surfaces already carry the player's own axes.
+
+The game keeps the player's orientation as a conventional 4x4 transform whose
+translation row **is** the position the guide already tracks, so the matrix
+begins `0x30` bytes earlier. `memory.parse_transform` already validated exactly
+this shape; nothing new had to be understood, only located.
+
+- `player_address - 0x30` -- the player's 4x4. `values[0], values[2]` are the
+  right axis, `values[8], values[10]` the forward axis, `values[12:15]` the
+  position.
+
+**Found by structure, not by correlation.** A search of `0x00100000`-`0x01800000`
+for orthonormal matrices whose translation equalled the live player position
+returned 16 hits and no false ones. Requiring the translation to match is what
+makes it the player's transform rather than one of the many other rotation
+matrices in memory, and `player_frame` re-checks that on every read.
+
+**Verified live.** Sampled at 4 Hz while the player flew and turned on spoken
+cues, the forward axis swung through a left turn and back through a right. The
+16 copies fall into two groups differing by a fraction of a degree -- one lags
+the other by a frame, matching the simulation/render split already known here.
+Whether this is the character's facing or the chase camera's cannot be told
+apart while flying, and does not matter: the two are locked together, and it is
+the frame the controls operate in either way.
+
 ## Adding a screen: the checklist
 
 In the order that avoids wasted sessions. Steps 3 and 5 were skipped when Game

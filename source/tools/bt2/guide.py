@@ -42,12 +42,19 @@ from .memory import (
     ObjectiveNotReady,
     distance_to,
     horizontal_reach,
+    player_frame,
     within_trigger,
 )
 from .anchor import ArrowSolver
 from .atlas import MapLabeler
 from .markers import DEFAULT_MARKER_RADIUS, MarkerLocation, MinimapInventory
-from .navigation import cue_for, kind_from_profile
+from .navigation import (
+    UNIT_NAME,
+    cue_for,
+    kind_from_profile,
+    relative_angle,
+    turn_phrase,
+)
 from .objective import CONFIRMED, UNCONFIRMED, Objective, resolve_selector
 from .profiles import MapProfile, ProfileStore, default_store
 from .scan import TableScanner
@@ -120,6 +127,9 @@ class GuideState:
     announced_inside: bool = False
     last_callout: float | None = None
     announced_degraded: bool = False
+    # Set by the G key. Answered once, where the offset to the objective is
+    # already known, then cleared.
+    direction_requested: bool = False
     pending_world_teleport: bool = False
     pending_pause_notice: bool = False
     blocked_identity: tuple | None = None
@@ -299,6 +309,39 @@ class Guide:
             self._analysis_image = image
             self._analysis = analyze_frame(image)
         return self._analysis
+
+    def announce_direction(self, observed, player, delta_x, delta_z,
+                           label=None, distance=None) -> None:
+        """Say which way to turn for the objective, from where the nose points.
+
+        The guidance tones give this in world terms -- stereo left and right
+        mean west and east -- which is unusable to a player who cannot see
+        which way they are pointing. The game keeps the player's own axes in a
+        transform beside the position already tracked, so the same offset can
+        be said as a turn instead.
+
+        Spoken only when asked for, on G, so it never talks over the game or
+        the tones.
+        """
+        frame = None
+        try:
+            frame = player_frame(self.pine, observed.player_address, player)
+        except Exception:
+            frame = None
+        if frame is None:
+            # Better to say the direction is unknown than to give a turn that
+            # is really a compass point and let it be followed into a cliff.
+            self.speaker.say("Cannot tell which way you are facing.")
+            return
+        angle = relative_angle(delta_x, delta_z, frame[1])
+        if angle is None:
+            self.speaker.say("No direction to give from here.")
+            return
+        name = label or "Objective"
+        sentence = f"{name}, {turn_phrase(angle)}"
+        if distance is not None:
+            sentence += f", {distance:.0f} {UNIT_NAME}"
+        self.speaker.say(sentence + ".")
 
     def navigation_scene_ready(self, analysis) -> bool:
         """Suspend immediately outside Adventure; reacquire after three frames.
@@ -1647,6 +1690,12 @@ f"{observed.display_name} calibrated."
                         self.speaker.say("Nothing to record.")
                     time.sleep(0.15)
                     continue
+                if action == "direction":
+                    # Answered on the next pass, which is where the offset to
+                    # the objective has been worked out.
+                    state.direction_requested = True
+                    time.sleep(0.05)
+                    continue
                 if action is not None and not observed.is_local:
                     if self.selector.casefold() == "objective":
                         if action == "repeat":
@@ -1790,6 +1839,18 @@ f"{observed.display_name} calibrated."
                     state.event_confirmation_count = 0
                     state.last_event_frame_sequence = -1
 
+                    if state.direction_requested:
+                        # The minimap does not rotate: screen right is east and
+                        # screen up is north, so the screen offset gives the
+                        # world direction. Distance here is in minimap pixels,
+                        # not world units, so it is not spoken -- saying a
+                        # number in the wrong unit is worse than saying none.
+                        state.direction_requested = False
+                        self.announce_direction(
+                            observed, player, delta_x, -delta_y,
+                            state.objective.label if state.objective else None,
+                        )
+
                     scale = max(distance, 1.0)
                     pan = delta_x / scale
                     # Screen y grows downward; moving toward the top of the
@@ -1930,6 +1991,13 @@ f"Inside {target.label}. {distance:.0f} units."
                 elif state.announced_inside:
                     state.announced_inside = False
                     state.last_callout = None
+
+                if state.direction_requested:
+                    state.direction_requested = False
+                    self.announce_direction(
+                        observed, player, delta_x, delta_z,
+                        getattr(target, "label", None), distance,
+                    )
 
                 scale = max(distance, 1.0)
                 if (

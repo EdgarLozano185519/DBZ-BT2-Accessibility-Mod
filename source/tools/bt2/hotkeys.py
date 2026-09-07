@@ -115,6 +115,11 @@ class DestinationHotkeys:
     VK_F = 0x46  # that was a free event
     VK_S = 0x53  # that advanced the story
     VK_U = 0x55  # nothing happens there at all
+    # Which way to turn for the current objective. On a key rather than spoken
+    # automatically: the player asked for it only when asked for, so that it
+    # never talks over the game or the guidance tones. W, A, S and D are flight
+    # controls and T, N, B, R, F and U are taken, which leaves G.
+    VK_G = 0x47  # which way is the objective from where I am pointing
 
     def __init__(self) -> None:
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -131,7 +136,8 @@ class DestinationHotkeys:
 
     def poll(self) -> str | None:
         if not desktop_input_allowed(self._user32):
-            for key in (self.VK_N,self.VK_B,self.VK_R,self.VK_F,self.VK_S,self.VK_U):
+            for key in (self.VK_N,self.VK_B,self.VK_R,self.VK_F,self.VK_S,
+                        self.VK_U,self.VK_G):
                 self._pressed(key)
             return None
         if self._pressed(self.VK_N):
@@ -146,4 +152,6 @@ class DestinationHotkeys:
             return "story"
         if self._pressed(self.VK_U):
             return "none"
+        if self._pressed(self.VK_G):
+            return "direction"
         return None

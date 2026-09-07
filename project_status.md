@@ -18,6 +18,10 @@ Menus speak through NVDA, driven by the game's own memory:
 - **Game Level** -- the difficulty chooser inside Dragon Adventure, reached
   after picking a story event. Levels 1, 2 and 3, chosen with Left and Right.
   F12 reads the event name and the instruction line, both the game's own text.
+- **G says which way to turn** while flying the world map. The guidance tones
+  are panned by world direction, so they mean nothing without knowing your
+  heading; G reads the player's own forward axis and says the objective as a
+  turn instead. On a key only, and it says when it cannot tell.
 - **Screen detection** -- the announcer works out which screen is showing and
   picks the matching labels, or stays silent when it cannot.
 - **Menu subtitles on F12** -- the character's spoken line for the highlighted
@@ -152,6 +156,18 @@ inside a cutscene; the method is in the TODO in `docs/memory-map.md`.
 
 Good timing: the save is at the very start, so the opening cutscenes are ahead
 rather than behind.
+
+### Also worth doing
+
+- **Pan the guidance tones by heading, not by world direction.** G answers the
+  question on demand, but the continuous cue is still world-absolute: stereo
+  left means west, not your left. The player's forward axis is now available
+  and `guide.py` already does exactly this for local surfaces, so the change is
+  small. It was left out deliberately -- it alters guidance the player has been
+  flying with, and should be introduced as something they can judge and reject
+  rather than arriving unannounced.
+- **Speak the heading itself** ("facing northwest"), for orienting with no
+  objective selected. Cheap once the facing is read.
 
 ### Smaller, optional
 

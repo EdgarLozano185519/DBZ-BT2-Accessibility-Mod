@@ -291,6 +291,42 @@ def find_tables(block: bytes, base: int) -> list[tuple[int, tuple[Location, ...]
 # --- Transforms -------------------------------------------------------------
 
 
+# The player's 4x4 sits immediately before the position the guide already
+# tracks, because that position *is* the matrix's translation row: three axes
+# of four floats each come first, so the matrix begins 0x30 bytes earlier.
+PLAYER_TRANSFORM_OFFSET = 0x30
+
+
+def player_frame(pine, player_address: int, position=None):
+    """Return the player's ((right_x, right_z), (forward_x, forward_z)).
+
+    The world map had no facing vector, so guidance there was given in world
+    directions -- "the objective is east" -- which is unusable to someone who
+    cannot see which way they are pointing.  Indoors the guide already steers
+    by the player's own axes; this is the same thing for the overworld.
+
+    Verified live: sampled while the player flew and turned, the forward axis
+    swung with them through a left turn and back through a right.
+
+    `position` is the player's known position. When given, the matrix must
+    translate to it -- that is what makes this the *player's* transform rather
+    than any of the many other orthonormal matrices in memory.
+    """
+    base = player_address - PLAYER_TRANSFORM_OFFSET
+    try:
+        block = pine.read_aligned_range(base, 64)
+    except Exception:
+        return None
+    parsed = parse_transform(FlatMemory(base, block), base)
+    if parsed is None:
+        return None
+    values, translation = parsed
+    if position is not None:
+        if max(abs(a - b) for a, b in zip(translation, position)) > 2.0:
+            return None
+    return (values[0], values[2]), (values[8], values[10])
+
+
 def parse_transform(
     memory: MemoryView, address: int
 ) -> tuple[tuple[float, ...], tuple[float, float, float]] | None:
