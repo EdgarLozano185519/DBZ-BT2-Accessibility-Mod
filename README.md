@@ -93,6 +93,26 @@ emulator's CPU thread otherwise. The guide says so if you press T without
 pausing, every write is read back to confirm it, and a failed write is rolled
 back.
 
+**Reaching a story event.** The red story marker on the minimap is a picture,
+not a place the guide can look up, so it cannot teleport you straight to it.
+What works, and what the mod is built around, is this:
+
+1. **N** or **B** until you hear the destination you want to try.
+2. **G** if you want to know how far it is and which way it lies.
+3. **Pause PCSX2**, press **T**, then unpause. You are now standing on it.
+4. Try the action button. If nothing happens, go back to step 1 and try the
+   next one.
+
+It is trial and error, and there are usually fewer than ten places to try. It
+needs no flying, which is the point: it exists because moving accurately
+without seeing the screen is the part that does not work.
+
+**It tells you when the map changes under it.** If the destinations are
+rearranged — finishing a story event does this — it says "Destinations
+changed" and describes the new set. If it has to use a map's destinations
+without being able to confirm they belong to the map you are on, it says so
+once rather than presenting a guess as a fact.
+
 With the game focused:
 
 - **F12** — the game's own text for the current screen
@@ -109,6 +129,10 @@ With the game focused:
 Being honest about the limits, because silence from a screen reader is
 indistinguishable from "working, nothing to say":
 
+- **The story marker cannot be teleported to directly.** It exists only as a
+  marker drawn on the minimap, and turning that into a place needs a map scale
+  the guide learns by watching you fly. Hence the trial-and-error loop above.
+  Teaching it that scale by teleporting instead is the next planned change
 - **The story event list does not speak.** Choosing which story event to play
   is still done blind, even though the difficulty screen after it now speaks
 - Dragon Library is named but its entries are not read. Ultimate Battle Z, the
@@ -117,9 +141,8 @@ indistinguishable from "working, nothing to say":
   and the next thing being worked on
 - **Battles are not accessible** beyond the game's own audio
 - The **event name** F12 reads on Game Level has only ever been checked against
-  one story event, because only one is unlocked on the current save. If it ever
-  reads a name that does not match the event you picked, that is why — please
-  report it
+  a single story event. If it ever reads a name that does not match the event
+  you picked, that is why — please report it
 - If text addresses no longer match, F12 says "no subtitle available" rather
   than reading nonsense
 - Navigation is a playtest of Dragon Adventure, not whole-game accessibility.
@@ -219,10 +242,38 @@ Both worker builds verify the result is x64 and refuse otherwise: the bundled
 NVDA client is 64-bit, and a mismatch fails at runtime rather than at build
 time.
 
+After rebuilding, stamp the release so the folder stays internally consistent:
+
+    python source/tools/build_release.py --release=YYYY.MM.DD-rN
+    python source/tools/build_release.py --check    # verify, change nothing
+
+**It refuses to stamp a release whose worker is older than its sources**, which
+is the mistake that costs a confused debugging session: the app looks fine and
+behaves like the old code. `--check` is the quick way to ask whether the folder
+is coherent.
+
 ## Finding new addresses
 
 `source/tools/menu_probe.py` is the tool for mapping a new screen:
 
+- **`check`** — **run this first when anything misbehaves.** Prints which
+  screen markers match and in what order, what the guide settled on, what the
+  cursor and its mirror read, and whether the HUD heuristic disagrees. Two
+  faults that were invisible from outside the mod were each obvious in one line
+  of it, and both were reasoned about wrongly first.
+- **`keys`** — when a hotkey seems unreliable. Separates the three causes that
+  all present the same way: the press never reaches the process, the game does
+  not have focus so it is refused on purpose, or the loop looks too rarely to
+  see it. It focuses the game itself before measuring.
+- **`positionscan`** / **`fit`** — for menus the press scan cannot drive:
+  horizontal ones, ones with few entries, ones reached only from inside a story
+  event. `positionscan` captures after each *named* key press; `fit` finds the
+  addresses that behave like an index. Read the positions back off the paired
+  screenshots rather than assuming the presses landed — one missed press
+  poisons the correlation while the run still looks clean.
+- **`dryrun`** — runs the real guide loop with a recording speaker and prints
+  every line it would say. The mod's whole output is speech, which otherwise
+  cannot be checked without the player sitting at the controls.
 - **`pressscan`** — the workhorse. Speaks a varying number of button presses per
   sample and captures RAM after each, so the cursor follows a sequence no
   animation counter reproduces. It does not assume how many options a menu has.
@@ -232,6 +283,10 @@ time.
   spoken table can be written from what was actually on screen.
 - **`watch ADDR...`** — poll addresses live to see which hold steady.
 - **`recorrelate`** — re-analyse the last capture from disk.
+
+`source/tools/extract_text.py` pulls the disc's story text offline — 553
+`TXT-US-*` files, 2,458 distinct lines — with no emulator and no player
+involved. It is the filter the cutscene-subtitle work depends on.
 
 Captures land in `reference/`, which is git-ignored. **Never commit game
 memory, extracted text or disc images.**
@@ -252,14 +307,45 @@ These were learned the hard way and are worth keeping:
 - **Never announce a guess.** For a player who cannot see the screen, a
   confidently wrong option is worse than silence. Every read is checked, and the
   mod says when it cannot help.
+- **Measure before theorising.** Reasoning from the code about why a key
+  "worked sometimes" produced two confident wrong answers in a row. Measuring
+  it took minutes and gave the real one: the loop polls about four times a
+  second, a key tap lasts a tenth of a second, and Windows shares the
+  "recently pressed" bit with any other process that asks — so keys are now
+  sampled on their own thread.
+- **Store what the player decided; never re-derive it.** A chosen destination
+  used to be looked up again each frame from a list rebuilt from the minimap,
+  so a marker missing for one frame silently moved the selection and the
+  teleport went elsewhere. Re-deriving turns a momentary gap in perception
+  into a silent change of intent.
+- **Read input before the loop gives up.** The loop abandons a pass when no
+  objective has resolved. Anything read after that point is discarded in
+  exactly the situations the player most needs it, and anything read into a
+  local is lost when that pass returns.
+- **Focus the game before testing keys.** The guide refuses hotkeys without
+  game focus by design, so an unfocused test measures nothing while looking
+  like a result. `bt2.windows.focus_game_window()` takes focus and verifies it.
+- **Ask the player before running anything, and say whether they are needed.**
+  Their time at the controls is the scarce resource; read-only checks and
+  synthesised presses are not.
 - **Prefer readable evidence to magic numbers.** Screens are identified by
   sprite-name strings the game loads, which can be checked, rather than by a
   state integer that can only be trusted.
 
 ## Where to start
 
-`project_status.md` has the current state and the ordered next steps. The
-largest one is **Dragon Adventure story subtitles**: the text is real UTF-16LE
+`project_status.md` has the current state and the ordered next steps, and
+**"What the player actually does"** describes the loop they rely on — worth
+reading before changing anything near navigation or teleport.
+
+The change that would most improve play is **teaching the map scale by
+teleporting rather than flying**. The story objective is a minimap marker with
+no coordinate-table entry; converting it needs a scale the calibrator learns
+from movement, and the player cannot fly. Teleport is movement the guide
+controls, so a few short teleports in known directions should teach it, saved
+per map profile.
+
+The largest untouched piece is **Dragon Adventure story subtitles**: the text is real UTF-16LE
 in the disc's `TXT-US-*` files, on-screen prose is demonstrably readable from
 RAM, and the menu subtitles prove the mechanism. The open question is only how
 to tell which line is currently displayed, since a cutscene has no cursor.
