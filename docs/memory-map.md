@@ -26,6 +26,11 @@ the highlighted option; the words must come from our own table. Those tables in
 `source/tools/menu_announcer.py` are the only place the text exists, and the
 only thing that can ever be translated.
 
+The Dragon Adventure scenario names go the same way: "Saiyan Saga" and "Fateful
+Brothers" are in neither RAM nor the disc corpus, searched end to end, so they
+are artwork too. This one hurts more than the fixed menus, because the scenario
+list **grows with progress** while our table does not -- see Select Scenario.
+
 **Story and tutorial text is the exception.** It is real UTF-16LE text in the
 553 `TXT-US-*` files inside `ZS2US_1.AFS` -- 2,601 strings of cutscene
 dialogue, narration and tutorials. Extractable offline from the ISO. Nothing
@@ -38,9 +43,10 @@ meaningless unless the right screen is up. `0x00AA12A8` is the main menu cursor,
 but on Options the same byte reads 163 and on Dragon Library 208. Reading it
 blindly names options at random.
 
-Screens identify themselves: each loads its own table of sprite names into the
-dynamic region around `0x00A00000`. Detection reads a short string at a fixed
-address.
+Screens identify themselves by loading their own sprite names into memory.
+Detection reads a short string at a fixed address.
+
+Most screens are told apart in the dynamic region around `0x00A00000`:
 
 - **Main Menu** -- `mc_menu_lineanime` at `0x00AA15EC`
 - **Options** -- `mc_icon_saveload` at `0x00AFCF85`
@@ -49,6 +55,17 @@ address.
   `01 80 00 00 00 00 00 C4 E1 06 53 53` at `0x00533D60`. **This signature is
   not exclusive**: it also matches on the Game Level screen. It is therefore
   treated as weak evidence -- see below.
+
+**The two Dragon Adventure screens cannot be**, and are found in a second
+sprite-name table around `0x00D52000` instead, entries at a `0x40` stride:
+
+- **Select Scenario** -- `mc_da_2_text_off_l` at `0x00D53440`
+- **Game Level** -- `mc_da_5_lv_csr` at `0x00D547C0`
+
+The dynamic region is **identical between those two screens, to the byte**, so
+nothing in it can separate them; the second table is rewritten per screen and
+does. This was found the hard way -- see Select Scenario. Do not assume the
+dynamic region is where a marker must live.
 
 Match markers as a **prefix**. The main menu's name is `mc_menu_lineanime`; an
 exact comparison against a 16-byte window clipped the trailing "e" and failed.
@@ -150,8 +167,12 @@ frame would mute an option until the player navigated away and back.
 Reached after picking a story event. Three boxes side by side reading 1, 2 and
 3, so it answers to **Left and Right**, not Up and Down. It opens on 2.
 
-- **Marker** -- `mc_da_5_lv_csr` at `0x00B1007B`. The screen's own cursor
-  sprite. Absent at that address on both the main menu and Options.
+- **Marker** -- `mc_da_5_lv_csr` at `0x00D547C0`, in the per-screen sprite-name
+  table. **The marker used to be the same name at `0x00B1007B`, and that was
+  wrong**: it matches on Select Scenario too, because the two screens share
+  their whole dynamic allocation. See Select Scenario below. The copy at
+  `0x00D547C0` is absent on all seven Select Scenario captures and on every
+  other screen.
 - `0x00B054A8` (byte) -- **cursor index, 0 to 2**, plain, beside the marker.
 - `0x00432D71` (byte) -- the **same index times four**. Mirrored at
   `0x00432D91`, and again at `0x00532DF1` / `0x00532E11`; the `+0x10` neighbours
@@ -166,15 +187,37 @@ hard**, so neither does the mod.
 
 Two lines of real text sit alongside, identical in all six captures:
 
-- `0x00D1A782` -- the event name, "Mysterious Alien Warrior".
+- `0x00D1A782` -- **not the current event name.** See below.
 - `0x00D179C2` -- "Set the Match level to your strength. You can always adjust
   it later!"
 
-Both are read on **F12**, not spoken automatically. They have been seen for
-**one story event only**, and a different event's name is a different length and
-may well sit elsewhere. Reading the wrong event name aloud would be exactly the
-confident error this project treats as worse than silence, so it stays behind a
-key press until it has been seen on more than one event.
+Both are read on **F12**, not spoken automatically.
+
+**`0x00D1A782` is entry 0 of a table, not a display slot.** It was recorded as
+"the event name" from captures taken on event 00, where the two are
+indistinguishable. They are not the same thing: the address is the first entry
+of a 392-entry table of event names and story narration at a fixed `0x40`
+stride, beginning
+
+    0x00D1A782  Mysterious Alien Warrior
+    0x00D1A7C2  Kakarot
+    0x00D1A802  Common Enemy
+    0x00D1A842  Gohan and Piccolo
+
+and it reads "Mysterious Alien Warrior" **on the Select Scenario screen too**,
+where no event name is displayed at all. So F12 does not report the current
+event; it reports the first one, always. This is the confident error the
+project treats as worse than silence, and it is live in the shipped build.
+
+Fixing it needs the index of the current event, which is not yet known. The
+table itself is regular and reading `0x00D1A782 + 0x40 * n` is enough once that
+index is found -- the story event list, still unmapped, is the obvious place to
+look for it. Long entries overflow into the following slot, so an index landing
+on a continuation reads a fragment rather than a name; that has to be rejected
+rather than spoken.
+
+The instruction line at `0x00D179C2` is unaffected: it is the same sentence for
+every event, so a static table entry is the right answer there.
 
 **Verified.** Six captures at screen positions confirmed from the screenshots
 rather than assumed -- 2, 1, 2, 3, 2, 1 -- left exactly nine surviving
@@ -190,9 +233,81 @@ the pixel heuristic alone: a screen flagged as living inside Adventure is looked
 for in memory each frame, and finding its marker overrules the heuristic. A
 marker that can be checked beats a heuristic that can only be trusted.
 
-The cost is one short read per frame during play, for the one screen flagged so
-far. The pixel heuristic is left alone: it is load-bearing for navigation, and
-this screen is a menu whatever it looks like.
+The cost is one short read per frame during play, for each screen flagged so
+far -- two now, this one and Select Scenario. The pixel heuristic is left
+alone: it is load-bearing for navigation, and this screen is a menu whatever it
+looks like.
+
+## Select Scenario: the Dragon Adventure scenario list
+
+The list of scenarios, reached from Dragon Adventure before the story events
+and the Game Level chooser. A vertical list that wraps; the highlighted row
+stays centred and the names scroll through it. On this save it holds two
+entries, so the row above and the row below show the same one.
+
+- **Marker** -- `mc_da_2_text_off_l` at `0x00D53440`.
+- `0x00D53625` (byte) -- **cursor index**, plain, beside the marker.
+- `0x00B0536C` (byte) -- the **same index**, in the other allocation entirely.
+  `0x00D53634` carries it doubled, unused.
+
+- `0` Saiyan Saga, `1` Fateful Brothers
+
+**This screen and Game Level cannot be told apart by any marker in the dynamic
+region.** `0x00A00000`-`0x00C00000` is identical between captures of the two
+screens **to the byte** -- 0.00% differing, against 97-99% for every other pair
+of screens. That is why `mc_da_5_lv_csr` at `0x00B1007B` matched here and the
+mod believed it was on the difficulty chooser. Nothing about that address was
+wrong; the region simply does not change between these two screens, so no
+marker in it can ever separate them.
+
+What does separate them is the **per-screen sprite-name table** around
+`0x00D52000`, entries at a `0x40` stride, which is rewritten per screen:
+`mc_da_2_*` names on this screen, `mc_da3_*`, `mc_da4_*` and `mc_da_5_*` on
+Game Level. Both screens' markers now come from there, and both were checked
+against all thirteen captures on disk: each matches its own screen and nothing
+else.
+
+**Verified.** Six captures cued Down, Down, Up, Down, Down, Down, each paired
+with a screenshot, and the positions were read back off the pictures rather
+than assumed -- 0, 1, 0, 1, 0, 1, the Up press toggling like a Down because the
+list has only two entries. `fit` left 47 surviving addresses of which 4 are
+index ramps, in the two families above. A seventh capture taken in a separate
+PINE session before the scan began agrees with all four, and is genuinely held
+out. Detection and cursor were then replayed offline against all thirteen
+captures with no mismatch, and confirmed live on the screen itself.
+
+Because the list has two entries, position is only parity, and any counter with
+period two fits the press schedule as well as the cursor does. The four
+survivors are believable because they also **differ from the Game Level
+capture** and are small enough to be an index -- not because the press schedule
+was selective. A third scenario would make this much stronger, and re-checking
+it then is worth the minute it costs.
+
+**The labels hold for this save's unlock state only.** The names are artwork,
+like every other UI label here: "Fateful Brothers" and "Saiyan Saga" appear
+nowhere in RAM and nowhere in the disc corpus, searched end to end. So the
+words have to come from a table we wrote, indexed by cursor position, and that
+table is only true while the list is what it was when it was written.
+
+This is the only screen here whose length is not ours to know, and it is the
+one case where an unnamed row means the player has been playing rather than
+that something is broken. So it does not fall silent on one: it says
+**"Scenario 3, name not known."** Silence would be indistinguishable from the
+mod failing, which is the fault this project exists to avoid, and a position is
+honest in a way a guessed name would not be.
+
+That announcement is also the **tripwire for the dangerous case**. Growth at the
+end is harmless. **Insertion is not**: a newly unlocked scenario landing above
+"Fateful Brothers" would shift it, and the mod would say the wrong name with
+full confidence and no warning. Nothing in memory distinguishes a position from
+a scenario identity while the list has only two entries in order, so this cannot
+be settled now. Hearing "name not known" means the list has grown and **every
+name on this screen must be re-checked**, not merely extended.
+
+Bounded at `MAX_UNNAMED_ROW`: a cursor reading past that is far likelier to be
+a bad read than a menu that long, and inventing a row number out of garbage
+would be its own confident error. Tested at rows 3 and 4, at implausible
+values, and with the mirrors disagreeing.
 
 ## Subtitles: the game's own words, in memory
 
@@ -279,6 +394,10 @@ the corpus with `python extract_text.py`.
 - **Ultimate Battle Z** -- not detected at all. The announcer correctly says
   "Unknown screen" there, which is the intended behaviour: naming a screen it
   cannot read would be worse than admitting it.
+- **The story event list** -- the screen between Select Scenario and Game
+  Level, where the individual events are chosen. Not captured, not detected.
+  It is the likeliest home of the current-event index that would make the F12
+  event name honest, so it is now the highest-value screen left.
 
 ## The player's facing, on the world map
 
@@ -511,6 +630,12 @@ Level was added, and each cost a bug that only a live run revealed.
    exclusive: the title screen's signature also matches on Game Level, and
    because Title is checked first it announced "New Game" over a difficulty
    chooser. `check` prints all of this.
+   **And check the reverse: does an existing screen's marker match the new
+   one?** Select Scenario was silent because Game Level's marker matched it,
+   which no amount of looking at the new screen's own marker would have found.
+   Before hunting for a marker at all, diff the new capture against the nearest
+   mapped screen: if a region is identical between them, nothing in it can be a
+   marker, and that one measurement saves an afternoon.
 4. **Find the cursor**: `pressscan` for a wrapping menu driven by one repeated
    key, `positionscan` plus `fit` otherwise. Expect two copies -- a plain count
    in the screen's own allocation and a multiplied one in static memory. Wire
@@ -558,6 +683,12 @@ Level was added, and each cost a bug that only a live run revealed.
 - **Assuming a screen enum is a clean 32-bit word.** Filtering on that left zero
   candidates once the return-to-main constraint was added. The real identifier
   was a string, not an integer.
+- **Assuming a text address is a display slot.** `0x00D1A782` was recorded as
+  the Game Level event name from captures taken on event 00. It is the base of
+  a name table, and on event 00 those are the same bytes. A slot and a table
+  entry are only distinguishable on a *second* value -- so read an address on
+  a screen where its contents ought to be different, not merely on a second
+  visit to the same one.
 - **Two screens cannot identify a screen.** A blind diff over title and main
   gave 210,051 candidates; adding Options gave 3,178; four screens with a
   return-visit constraint still left 552.
@@ -625,6 +756,13 @@ a new screen's marker against captures of other screens, which is how
 `mc_da_5_lv_csr` was shown to be specific to Game Level. That needs one capture
 per screen, not eighteen of the same one.
 
+That is also how the claim was overturned. On 2026-09-07 seven captures of
+Select Scenario were added -- `events0` and `posn0` to `posn5` -- and against
+them `mc_da_5_lv_csr` at `0x00B1007B` is not specific to Game Level at all. The
+six kept captures are what made the diff possible; keeping one per screen is
+vindicated, and so is re-running step 3 whenever a screen is added rather than
+trusting the answer it gave last time.
+
 What is no longer possible is replaying `fit` or `recorrelate` over the old
 multi-sample sets. If a derived address is ever doubted, re-derive it from a
 fresh capture rather than trusting a dump that no longer exists. All 71
@@ -635,14 +773,21 @@ interpretable.
 
 - Dragon Library and every other submenu need cursor addresses.
 - The Game Level cursor has not been checked across leaving the screen and
-  coming back, and its two text addresses have been seen for one event only.
+  coming back.
+- **F12 reports the wrong event name on every event but the first**, because
+  `0x00D1A782` is a table base rather than a display slot. See the Game Level
+  section. Live in the shipped build.
 - Other screens may also be misread as gameplay by the HUD detector, or shadow
   one another the way Title shadowed Game Level. Only the screens with captures
   on disk have been checked, and each new screen needs the same two questions
   asked of it.
-- Other Dragon Adventure screens -- the event list this one is reached from --
-  are still unmapped. Whether they share `mc_da_5_lv_csr` is unknown, so the
-  Game Level marker could in principle match one of them.
+- **The Select Scenario labels are true for the current unlock state only**, and
+  break if a newly unlocked scenario is inserted rather than appended.
+- The story event list is still unmapped, and it is the screen most likely to
+  carry the current-event index. Whether `mc_da_2_text_off_l` or
+  `mc_da_5_lv_csr` also match there is unknown -- there is no capture of it --
+  so either marker could in principle shadow it, exactly as Game Level was
+  shadowed. Capture it before trusting either.
 - Ultimate Battle Z and the rest are not detected at all.
 - Nothing reads the 2,601 story strings yet.
 - The subtitle block is relocated by shape, but only within

@@ -73,16 +73,26 @@ This is a playtest of Dragon Adventure navigation and of menu reading, not
 complete menu, battle, or whole-game accessibility. Unfamiliar maps still
 need wider live testing.
 
-Menus that speak: the title screen, the main menu, Options, and the Game
-Level chooser reached after picking a story event. F12 reads the game's own
-text for the current screen. Screens the guide recognises but has not mapped
-are named and then stay quiet; screens it does not recognise say so rather
-than guessing. Choosing which story event to play is still done blind, and
-story cutscene subtitles are not read yet.
+Menus that speak: the title screen, the main menu, Options, the Select
+Scenario list in Dragon Adventure, and the Game Level chooser reached after
+picking a story event. F12 reads the game's own text for the current screen.
+Screens the guide recognises but has not mapped are named and then stay
+quiet; screens it does not recognise say so rather than guessing. Choosing
+which individual story event to play is still done blind, and story cutscene
+subtitles are not read yet.
 
-The event name F12 reads on the Game Level screen has only been checked
-against one story event, because only one was unlocked while testing. If it
-ever reads a name that does not match the event you chose, please report it.
+The scenario names are pictures rather than words in the game's memory, so
+the guide reads them from a list written by hand, and that list is right for
+the scenarios unlocked when it was written. Unlock another and the guide
+will not know its name; rather than say nothing it says "Scenario 3, name
+not known." Please report it when you hear that, because it also means the
+names it already knows may have shifted.
+
+The event name F12 reads on the Game Level screen is wrong on every event
+but the first, and known to be: it reads the first entry of the game's list
+of event names rather than the one you chose, so it says "Mysterious Alien
+Warrior" whatever you are playing. Ignore it for now. The instruction line
+beside it is correct.
 
 This release omits the api-ms-win-*.dll compatibility stubs that release
 2026.09.05-r4 carried. They forward to the Universal C Runtime, which is

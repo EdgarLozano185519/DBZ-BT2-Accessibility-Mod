@@ -54,8 +54,17 @@ reader normally without the guide talking over it.
 - the **title screen** — New Game, Load Game
 - the **main menu** — all ten options
 - **Options** — Save and Load, Controller, Screen, Sound, Exit
+- **Select Scenario**, the Dragon Adventure scenario list — Saiyan Saga and
+  Fateful Brothers, chosen with Up and Down
 - **Game Level**, the difficulty chooser reached after picking a story event in
   Dragon Adventure — Level 1, 2 or 3, chosen with Left and Right
+
+The scenario names are pictures rather than words in the game's memory, so the
+guide reads them from a list written by hand. That list is right for the
+scenarios unlocked when it was written. If you unlock another, the guide will
+not know its name, and rather than say nothing it says **"Scenario 3, name not
+known."** Please report it when you hear that: it means the list needs
+rebuilding, and the names it already knows may have shifted.
 
 Screens it recognises but has not mapped are named and then stay quiet; screens
 it does not recognise say so, rather than guessing. Where the game keeps two
@@ -63,10 +72,10 @@ copies of the cursor, both are read, and if they ever disagree it stays silent
 rather than name the wrong option.
 
 **F12 speaks the game's own text.** On the main menu, the character's spoken
-line for the highlighted option. On Game Level, the name of the story event and
-the instruction line. It is on a key press so that browsing stays quick. If the
-text has moved since it was last recorded, F12 says "Looking for the subtitles",
-finds it again, and carries on.
+line for the highlighted option. On Game Level, the instruction line — and an
+event name that is **currently wrong**, see below. It is on a key press so that
+browsing stays quick. If the text has moved since it was last recorded, F12
+says "Looking for the subtitles", finds it again, and carries on.
 
 **Dragon Adventure navigation.** The original guidance: it picks an objective
 from the live minimap, tracks your position, and uses stereo direction and pitch
@@ -133,16 +142,19 @@ indistinguishable from "working, nothing to say":
   marker drawn on the minimap, and turning that into a place needs a map scale
   the guide learns by watching you fly. Hence the trial-and-error loop above.
   Teaching it that scale by teleporting instead is the next planned change
-- **The story event list does not speak.** Choosing which story event to play
-  is still done blind, even though the difficulty screen after it now speaks
+- **The story event list does not speak.** The scenario list before it now
+  does, and the difficulty screen after it does, but choosing the individual
+  event between them is still done blind
 - Dragon Library is named but its entries are not read. Ultimate Battle Z, the
   item shop, character select and battle menus are not recognised at all
 - **Story cutscene subtitles are not read.** This is the largest missing piece
   and the next thing being worked on
 - **Battles are not accessible** beyond the game's own audio
-- The **event name** F12 reads on Game Level has only ever been checked against
-  a single story event. If it ever reads a name that does not match the event
-  you picked, that is why — please report it
+- The **event name** F12 reads on Game Level is **wrong on every event but the
+  first**, and known to be. It is reading the first entry of the game's list of
+  event names rather than the one you picked, so it says "Mysterious Alien
+  Warrior" whatever you are playing. Ignore it for now; the instruction line
+  beside it is correct. Fixing it needs the story event list mapped first
 - If text addresses no longer match, F12 says "no subtitle available" rather
   than reading nonsense
 - Navigation is a playtest of Dragon Adventure, not whole-game accessibility.

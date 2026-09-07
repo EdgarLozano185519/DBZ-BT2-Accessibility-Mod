@@ -46,13 +46,20 @@ MIN_ANCHOR_CHARACTERS = 8
 # PCSX2 binds F1 to F6, F8 and F9. F12 is unbound, so the mod can claim it.
 VK_F12 = 0x7B
 
+# The highest row number that will ever be spoken as a bare position. A
+# cursor reading beyond this is far likelier to be a bad read than a menu
+# that long, and inventing a row number from garbage would be its own
+# confident error.
+MAX_UNNAMED_ROW = 16
+
 
 class Screen:
     """A menu: how to recognise it, where its cursor is, what its rows say."""
 
     def __init__(self, name, marker_address, marker, cursor=None, stride=1,
                  labels=None, subtitles=None, mirror=None, mirror_stride=1,
-                 context=None, in_adventure=False, weak_marker=False):
+                 context=None, in_adventure=False, weak_marker=False,
+                 unknown_row=None):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -78,6 +85,13 @@ class Screen:
         # weaker evidence: it can and does turn up on screens it has nothing to
         # do with. Such a screen is only accepted when no named marker matches.
         self.weak_marker = weak_marker
+        # How to describe a row this screen has no name for, if it should be
+        # described at all. Most menus here are a fixed length, so an index off
+        # the end of the table means a bad read and silence is right. A list
+        # that grows with the player's progress is different: an unnamed row is
+        # the expected consequence of playing the game, and saying nothing
+        # leaves the player unable to tell a new scenario from a broken mod.
+        self.unknown_row = unknown_row
 
     @property
     def readable(self) -> bool:
@@ -109,6 +123,17 @@ class Screen:
                 # better than naming an option on a coin toss.
                 return raw, None, False
         return raw, self.labels.get(index), True
+
+    def unknown_row_label(self, raw: int) -> str | None:
+        """Describe a row with no name, or return None to stay silent."""
+        if self.unknown_row is None:
+            return None
+        if self.stride and raw % self.stride:
+            return None          # Not a whole index; this is a bad read.
+        index = raw // self.stride
+        if index > MAX_UNNAMED_ROW:
+            return None
+        return self.unknown_row.format(position=index + 1)
 
 
 def _read_ascii(pine, address: int, count: int) -> bytes:
@@ -237,12 +262,52 @@ SCREENS = [
     # Same two-copy arrangement as Options: a plain count at 0x00B054A8, beside
     # this screen's own sprite names, and the index times four at 0x00432D71 in
     # static memory. Both are read and must agree.
+    #
+    # The marker was 0x00B1007B, which also matches on Select Scenario: that
+    # address lives in the block the two screens share byte for byte, so no
+    # marker there can ever tell them apart. The same sprite name sits again at
+    # 0x00D547C0, in the per-screen name table, where it is absent on all seven
+    # Select Scenario captures. Verified across every capture on disk.
     Screen(
-        "Game Level", 0x00B1007B, b"mc_da_5_lv_csr", 0x00B054A8, 1,
+        "Game Level", 0x00D547C0, b"mc_da_5_lv_csr", 0x00B054A8, 1,
         {0: "Level 1", 1: "Level 2", 2: "Level 3"},
         {0: 0x00D179C2, 1: 0x00D179C2, 2: 0x00D179C2},
         mirror=0x00432D71, mirror_stride=4, context=0x00D1A782,
         in_adventure=True,
+    ),
+    # Select Scenario, the list of Dragon Adventure scenarios, reached before
+    # the story events and the Game Level chooser. A vertical list that wraps.
+    #
+    # This screen and Game Level share their whole dynamic allocation --
+    # 0x00A00000 to 0x00C00000 is identical between captures of the two, to the
+    # byte -- so neither can be recognised there. Both are found instead in the
+    # per-screen sprite-name table around 0x00D52000, which does differ. The
+    # two markers were checked against all thirteen captures on disk and match
+    # their own screen and nothing else.
+    #
+    # The cursor is read twice over, as everywhere here: plainly at 0x00D53625,
+    # beside this screen's own marker, and again at 0x00B0536C in the other
+    # allocation entirely, which is the stronger cross-check because a block
+    # that drifts takes only its own copy with it.
+    #
+    # The labels are what the screen showed at each position, read back off the
+    # screenshots rather than assumed. They are true for this save's unlock
+    # state only: the list grows as scenarios are unlocked, and whether new
+    # ones are appended or inserted is unknown, so a third entry could shift
+    # these two. An index with no label is silent, which covers growth at the
+    # end; it does not cover insertion, and that must be re-checked the first
+    # time a third scenario appears.
+    Screen(
+        "Select Scenario", 0x00D53440, b"mc_da_2_text_off_l", 0x00D53625, 1,
+        {0: "Saiyan Saga", 1: "Fateful Brothers"},
+        mirror=0x00B0536C, mirror_stride=1,
+        in_adventure=True,
+        # The one screen here whose length is not ours to know. A row we have
+        # no name for means the list has grown, so say which row it is and
+        # admit the name is missing -- and treat hearing this as a sign that
+        # every name on this screen now needs re-checking, since an inserted
+        # scenario would shift the two we do know.
+        unknown_row="Scenario {position}, name not known.",
     ),
 ]
 
@@ -288,7 +353,8 @@ class MenuReader:
         trusted, so the marker decides.
 
         Costs a short read per frame, and only for screens flagged as living
-        inside Adventure -- one, at present.
+        inside Adventure -- two, at present: the Game Level chooser and the
+        Select Scenario list.
         """
         for screen in SCREENS:
             if not screen.in_adventure:
@@ -374,10 +440,16 @@ class MenuReader:
         self._settled = raw
 
         if label is None:
-            # Not a position this screen has. Stay silent rather than name the
-            # wrong option: for a player who cannot see, a confident error is
-            # worse than nothing.
-            return
+            # Not a position this screen has a name for. Naming it anyway would
+            # be the confident error this mod must never make -- but silence is
+            # indistinguishable from the mod being broken, and on a list that
+            # grows with progress an unnamed row is the expected result of
+            # playing rather than a fault. Where the screen knows how to
+            # describe such a row, say the position instead: it is honest, it
+            # is checkable, and it tells the player the table needs extending.
+            label = self.screen.unknown_row_label(raw)
+            if label is None:
+                return
         if label != self._spoken:
             self._spoken = label
             self.speaker.say(label)

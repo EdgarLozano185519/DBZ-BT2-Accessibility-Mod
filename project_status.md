@@ -4,7 +4,7 @@ Screen reader support for Dragon Ball Z: Budokai Tenkaichi 2, played in PCSX2.
 Read this first when resuming. Details of every address live in
 `docs/memory-map.md`.
 
-Last updated: 2026-09-06.
+Last updated: 2026-09-07.
 
 ## What works today
 
@@ -17,7 +17,11 @@ Menus speak through NVDA, driven by the game's own memory:
   stays silent rather than guess.
 - **Game Level** -- the difficulty chooser inside Dragon Adventure, reached
   after picking a story event. Levels 1, 2 and 3, chosen with Left and Right.
-  F12 reads the event name and the instruction line, both the game's own text.
+  F12 reads the instruction line, the game's own text. It also reads an event
+  name, and **that part is wrong** -- see Next steps.
+- **Select Scenario** -- the Dragon Adventure scenario list: Saiyan Saga and
+  Fateful Brothers on this save, chosen with Up and Down. Added 2026-09-07
+  after the player reported it silent.
 - **N and B choose a destination, G reports it, T teleports to it.** Teleport
   followed the story marker before, so a destination picked with N or B could
   be asked about but not travelled to. An explicit choice now decides where T
@@ -145,7 +149,32 @@ check` before theorising.** Both faults found on Game Level were invisible from
 outside the mod and obvious in one line of that output, and both were reasoned
 about wrongly first.
 
-### 1. Verifications still owed
+### 1. The event name on F12 is wrong, and shipped
+
+`0x00D1A782` was recorded as the Game Level event name. It is not a display
+slot -- it is entry 0 of a 392-entry table of event names at a `0x40` stride,
+and it reads "Mysterious Alien Warrior" on every event and even on Select
+Scenario, where no event name is shown. The captures it was derived from were
+all taken on event 00, where a table base and a display slot are the same
+bytes.
+
+So F12 announces the first event's name whatever the player is actually
+playing. That is the confident error this project treats as worse than silence,
+and it is in the shipped build.
+
+Two ways out, and the second is better:
+
+- **Stop announcing it** until it can be read correctly. One line. Loses
+  nothing that was ever true.
+- **Find the current-event index.** The table is regular, so
+  `0x00D1A782 + 0x40 * n` is the whole fix. The story event list is the
+  likeliest place for that index and needs mapping anyway. Watch for long
+  entries overflowing into the next slot -- an index landing on a continuation
+  reads a fragment, which must be refused rather than spoken.
+
+Not done unasked, because it changes a key the player already uses.
+
+### 2. Verifications still owed
 
 All cheap, all need the player at the controls. Ask before running any of
 them -- see Testing with the player.
@@ -154,19 +183,29 @@ them -- see Testing with the player.
   event, check it still tracks. Every cursor here is held to being tested on a
   transition it was not derived from; this one has not been. If it goes silent
   afterwards that is the two mirrors disagreeing, which is the design working.
-- **The event name on a second story event.** `0x00D1A782` has been seen for
-  event 00 only. **No longer blocked**: the player has since cleared several
-  events, so this can be checked whenever they are next on a Game Level screen.
-  It stays on F12 until then, which is why it is on F12.
+- **The Select Scenario labels, when a third scenario unlocks.** The names are
+  artwork, so they come from a table we wrote, indexed by position. The mod now
+  announces **"Scenario 3, name not known."** for a row it has no name for, so
+  a grown list is audible rather than silent. That announcement is the signal
+  to re-check: appending is harmless, but a scenario *inserted* above Fateful
+  Brothers would shift it and the mod would misname it confidently. Whether the
+  game appends or inserts cannot be settled while the list has two entries.
+  **If the player ever hears it, re-derive the labels rather than just adding
+  one.**
 - **The Dragon Library marker, in a second run.** It rests on a single visit,
   unlike the main menu's and Options'.
 
-### 2. Map the remaining screens
+### 3. Map the remaining screens
 
-- **The story event list**, inside Dragon Adventure -- the screen Game Level is
-  reached *through*, where the player is choosing blind. Almost certainly needs
-  `in_adventure=True` like Game Level, since the HUD heuristic will call it
-  gameplay too. Probably the highest value of the three.
+- **The story event list**, inside Dragon Adventure -- the screen between
+  Select Scenario and Game Level, where the player is still choosing blind.
+  Now clearly the highest value of the three: it is both a silent screen and
+  the likeliest home of the current-event index that fixes F12. Almost
+  certainly needs `in_adventure=True`, since the HUD heuristic will call it
+  gameplay too. **Capture it before trusting any marker near it** -- there is
+  no capture of that screen, so whether the Select Scenario or Game Level
+  marker also matches there is unknown, and that is exactly how Select Scenario
+  came to be silent.
 - **Dragon Library** -- detected, but cursor and labels both unknown.
 - **Ultimate Battle Z and the rest** -- not detected at all, so each needs a
   marker found before a cursor is worth looking for.
@@ -174,7 +213,7 @@ them -- see Testing with the player.
 Follow **Adding a screen** in `docs/memory-map.md`; it is a checklist because
 this session skipped two of its steps and shipped two bugs.
 
-### 3. Teach the map scale by teleporting, not flying
+### 4. Teach the map scale by teleporting, not flying
 
 **The one change that would most improve play.** The story objective is a
 minimap marker with no coordinate-table entry, so reaching it means teleporting
@@ -190,7 +229,7 @@ map, after which T could go straight to the story marker.
 Needs a pause and unpause from the player per step -- four or so per map --
 unless the pause can be driven programmatically, which is worth checking first.
 
-### 4. Dragon Adventure story subtitles
+### 5. Dragon Adventure story subtitles
 
 The largest untouched win, and the groundwork is now in place: `extract_text.py`
 gives 2,458 distinct lines, which is the filter that makes the search
@@ -237,14 +276,35 @@ taken at the next one rather than needing a fresh save.
 
 - The standalone `menu_announcer.py` still says "Unknown screen" on every screen
   transition, and does not have the mirror cross-check or the named-marker
-  precedence. The shipped `bt2/menus.py` has all three. It is a development
-  tool, so this matters only during a long probing session -- but it means it no
-  longer reflects how the mod behaves.
+  precedence. It also knows only four screens: neither Game Level nor Select
+  Scenario is in its table, so it is silent on both. The shipped
+  `bt2/menus.py` has all of it. It is a development tool, so this matters only
+  during a long probing session -- but it no longer reflects how the mod
+  behaves, and the gap is widening rather than holding steady.
 - Nothing checks read text against the extracted corpus yet. Deliberate:
   nothing reads story text yet either, and building the check first would be
   building against nothing.
 
 ## Recently finished
+
+- **Select Scenario speaks.** It was silent because Game Level's marker matched
+  it: the two screens share their dynamic allocation **byte for byte**, so no
+  marker in that region can separate them. Both markers moved to the per-screen
+  sprite-name table around `0x00D52000`, which does differ, and each now matches
+  its own screen and nothing else across all thirteen captures. The cursor was
+  found from six cued captures with the positions read back off the
+  screenshots, agrees in two separate allocations, and agrees with a seventh
+  capture taken before the scan began. Confirmed live and through `dryrun`.
+- **An unnamed scenario now says so.** This is the one menu whose length grows
+  with play, so an index off the end of the table means the player has unlocked
+  something, not that a read went wrong. It says which row it is and admits the
+  name is missing, which also serves as the tripwire for the insertion case
+  that would otherwise misname silently.
+- **A caution that came with it.** The scenario list has two entries, so the
+  press schedule only distinguishes parity and is weak evidence on its own.
+  What makes the four survivors believable is that they also differ on the Game
+  Level capture and are small enough to be an index. Worth re-checking when a
+  third scenario unlocks.
 
 - **The story corpus can be extracted offline.** `source/tools/extract_text.py`
   reads the disc directly: 2,458 distinct lines of cutscene dialogue, narration
