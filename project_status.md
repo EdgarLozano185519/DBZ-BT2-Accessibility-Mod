@@ -96,6 +96,25 @@ numpy/scipy/Pillow) for testing menus without the full guide.
 
     ..\..\.venv\Scripts\python.exe menu_announcer.py --seconds=120
 
+## What the player actually does
+
+Confirmed working in play, and worth not breaking:
+
+1. **N and B** cycle the map's destinations, announced with distance and
+   direction.
+2. **G** says how far the chosen one is and which way to turn.
+3. Pause PCSX2, press **T** to teleport there, unpause.
+4. Try the action button. If nothing happens, cycle to the next point and
+   repeat.
+
+It is trial and error, because the story marker is a minimap object with no
+coordinate-table entry and the projection that would fix that needs a scale
+learned by flying. The player cannot fly and has said the trial-and-error loop
+is acceptable. It has carried them through several story events.
+
+**The single improvement that would remove the guesswork** remains teaching the
+map scale by teleporting instead of flying -- see Also worth doing.
+
 ## The save file
 
 The player's save is a **fresh new game**: only the first Dragon Adventure
@@ -165,13 +184,13 @@ rather than behind.
 
 ### Also worth doing
 
-- **Neither new safeguard has met its real case yet.** The table chooser has
-  only been exercised against constructed pairs, because only one table has
-  ever been resident on this save; and the marker-change detection has not yet
-  seen a live story event rearrange the map. Both are unit-tested and both fail
-  safe -- the chooser refuses rather than guesses, the inventory waits seven
-  seconds before forgetting -- but neither has been proved in the situation it
-  was written for.
+- **Partly confirmed in play, 2026-09-06.** Loading a new map now updates the
+  destinations correctly, and the player is progressing through the story with
+  it. Two paths remain unproven and should not be described as working: the
+  **two-table refusal**, since it is unknown whether a second table has ever
+  been resident on this save, and the **in-place marker change**, where a story
+  event rearranges markers without the map changing -- that announces
+  "Destinations changed" and has not been heard yet. Both fail safe.
 
 - **Teach the map scale by teleporting rather than flying.** This is now the
   main blocker for story progress. The story objective is only a minimap

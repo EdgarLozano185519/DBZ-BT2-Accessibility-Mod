@@ -389,6 +389,12 @@ means a dot flickering under the arrow cannot cause chatter.
 Measured: absent for 8 frames, kept; absent for 31, dropped; a new marker
 admitted normally.
 
+**Confirmed in play on 2026-09-06** for the map-change case: loading a new map
+updates the destinations correctly and the player progressed through the story
+on it. The in-place case -- a story event rearranging markers while the map
+stays the same, which announces "Destinations changed" -- has still not been
+observed, and should not be reported as working until it is.
+
 ## An input held is better than an input dropped
 
 The destination keys were being read correctly -- a spy on the poll showed
