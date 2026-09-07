@@ -1384,6 +1384,10 @@ f"{surface.describe()}."
         # can never talk over one another.
         from .menus import MenuReader
         menus = MenuReader(self.speaker)
+        # Story prose is read in the same place and for the same reason: it is
+        # the one point in the loop where navigation guidance is not speaking.
+        from .story import StoryReader
+        story = StoryReader(self.speaker)
         if hotkeys.controller_name:
             self.speaker.say(f"Teleport: T key or L1 on {hotkeys.controller_name}.")
         else:
@@ -1454,6 +1458,18 @@ f"{surface.describe()}."
                         # Outside Adventure the player is usually in a menu, and
                         # this is the only point where nothing else is speaking.
                         menus.poll(self.pine, time.monotonic())
+                        # Cutscenes land here too: they are not the world map,
+                        # so the scene gate holds guidance off through them.
+                        #
+                        # Only where the menu reader does not know the screen.
+                        # On a mapped menu the same pointer aims at that
+                        # screen's subtitle, and reading it here would announce
+                        # every subtitle automatically -- which is exactly what
+                        # F12 was made a key press to avoid, because it slows
+                        # browsing to a crawl. An unknown screen is where a
+                        # cutscene lives.
+                        if menus.screen is None:
+                            story.poll(self.pine, time.monotonic())
                         if wants_direction:
                             self.speaker.say(
                                 "Not flying just now, so there is no heading "

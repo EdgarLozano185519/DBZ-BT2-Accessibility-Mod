@@ -16,6 +16,35 @@ import sys
 import threading
 
 
+def _echo(text: str) -> None:
+    """Print a line of speech to the log, without ever raising.
+
+    The desktop app captures this worker's stdout into its log, and on Windows
+    that stream is cp1252.  A single character it cannot encode -- the game
+    once produced U+3327, a CJK compatibility square -- raised
+    UnicodeEncodeError out of `print`, up through `say`, and out of the whole
+    guide loop, which then restarted and announced "Guide recovered from
+    UnicodeEncodeError".  Twice, in one session.
+
+    A diagnostic echo must never be able to stop the mod.  Anything the log
+    cannot represent is replaced, and a failure to log at all is swallowed:
+    losing a log line costs a developer some context, while raising here costs
+    the player the guide.
+    """
+    try:
+        print(text)
+        return
+    except UnicodeEncodeError:
+        pass
+    except Exception:
+        return
+    try:
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        print(text.encode(encoding, "replace").decode(encoding, "replace"))
+    except Exception:
+        pass
+
+
 class Speaker:
     """Queued NVDA speech, falling back to SAPI when NVDA is unavailable."""
 
@@ -92,7 +121,7 @@ class Speaker:
             return
         self._last_spoken = text
         if self.echo:
-            print(text)
+            _echo(text)
         if self.available and not self._closed:
             if interrupt:
                 while True:

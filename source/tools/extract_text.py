@@ -11,12 +11,14 @@ a far sharper question than "do these bytes look like words", and it can only be
 asked against the real corpus.
 
 Second, the groundwork for reading cutscene subtitles, where the corpus is what
-makes the search tractable at all.
+makes the search tractable at all.  Each file is a scene: a table of text
+boxes in the order the game shows them, so a box found in RAM identifies both
+the scene and how far through it the game has got.
 
 Nothing here writes into the repository: extracted text is game content and
 stays in `reference/`, which is git-ignored.
 
-    python extract_text.py                  # uses the ISO from profiles
+    python extract_text.py                  # uses the desktop app's game path
     python extract_text.py --iso=PATH
 """
 
@@ -24,7 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
+import os
 import struct
 import sys
 from pathlib import Path
@@ -32,6 +34,11 @@ from pathlib import Path
 SECTOR = 2048
 PVD_SECTOR = 16
 STORE = Path(__file__).resolve().parents[2] / "reference" / "corpus"
+
+# Every TXT-US file on this disc uses 5, 6, 10 or 30 slots; the cap only
+# rejects a header that is not one of these files at all.
+MAX_SLOTS = 64
+BOM = b"\xff\xfe"
 
 # Directory-record fields, by offset. Both-endian numbers are read little-end
 # first, which is the half every player of this format agrees on.
@@ -140,15 +147,69 @@ def afs_entries(iso, base: int) -> list[tuple[str, int, int]]:
     return [(n, o, s) for n, o, s in entries]
 
 
-def strings_in(block: bytes, minimum: int = 3) -> list[str]:
-    """Pull null-terminated UTF-16LE runs of printable text out of a file."""
-    found = []
-    for match in re.finditer(rb"(?:[\x20-\x7e\x0a\x0d]\x00){%d,}" % minimum, block):
-        text = match.group().decode("utf-16-le", "replace")
-        text = " ".join(text.split())
-        if text:
-            found.append(text)
-    return found
+class TextFileError(ValueError):
+    pass
+
+
+def parse_text_file(data: bytes) -> list[str]:
+    """Decode one TXT-US file into its text boxes, by slot.
+
+    The format is self-describing rather than a soup of strings, which matters:
+    a regex over printable ASCII silently split every line containing a
+    typographic apostrophe and produced fragments that match nothing in RAM.
+
+        u32   slot count
+        u32   [count + 1] offsets, the last one marking the end
+        ...   padding to an 8-byte boundary
+        each slot: a UTF-16LE BOM, the text, a null terminator
+
+    An unused slot is an empty range -- two equal offsets -- and is returned as
+    an empty string so a slot's index is also its position in this list.  Line
+    breaks inside a box are real: they are where the game wraps its text box,
+    and they are kept so a caller can decide whether to speak them.
+    """
+    if len(data) < 8:
+        raise TextFileError("shorter than a header")
+    count = struct.unpack_from("<I", data, 0)[0]
+    if not 0 < count <= MAX_SLOTS:
+        raise TextFileError(f"implausible slot count {count}")
+    first = 4 + (count + 1) * 4
+    first += -first % 8
+    if len(data) < first:
+        raise TextFileError("truncated offset table")
+    offsets = struct.unpack_from(f"<{count + 1}I", data, 4)
+    if offsets[0] != first:
+        raise TextFileError(f"first offset {offsets[0]:#x}, expected {first:#x}")
+    if list(offsets) != sorted(offsets):
+        raise TextFileError("offsets are not ascending")
+    if offsets[-1] > len(data):
+        raise TextFileError("offsets run past the end of the file")
+
+    boxes = []
+    for index in range(count):
+        blob = data[offsets[index]:offsets[index + 1]]
+        if not blob:
+            boxes.append("")
+            continue
+        if blob[:2] != BOM:
+            raise TextFileError(f"slot {index} does not start with a BOM")
+        boxes.append(decode_box(blob[2:]))
+    return boxes
+
+
+def decode_box(raw: bytes) -> str:
+    """Decode one null-terminated UTF-16LE box, BOM already removed."""
+    end = raw.find(b"\x00\x00")
+    if end < 0:
+        end = len(raw)
+    if end % 2:
+        end += 1
+    return raw[:end].decode("utf-16-le", "replace")
+
+
+def spoken(box: str) -> str:
+    """Collapse a box's text-box line breaks into one spoken line."""
+    return " ".join(box.split())
 
 
 def extract(iso_path: Path) -> int:
@@ -172,31 +233,66 @@ def extract(iso_path: Path) -> int:
         # name alone silently kept one file in seven and looked like it had
         # worked.
         corpus: dict[str, list[str]] = {}
+        refused = []
         for name, offset, length in wanted:
             iso.seek(offset)
-            corpus[f"{name}@{offset:#x}"] = strings_in(iso.read(length))
+            try:
+                corpus[f"{name}@{offset:#x}"] = parse_text_file(iso.read(length))
+            except TextFileError as error:
+                refused.append((name, offset, str(error)))
 
-    lines = sorted({line for group in corpus.values() for line in group})
-    (STORE / "story_strings.json").write_text(
+    # A file this parser cannot read is reported rather than skipped quietly.
+    # Every one of the 553 on this disc parses; a refusal means the format
+    # assumption has met something it does not cover, and the corpus is short
+    # by however many lines that file held.
+    if refused:
+        print(f"\n{len(refused)} file(s) did not parse:")
+        for name, offset, why in refused[:10]:
+            print(f"    {name}@{offset:#x}: {why}")
+
+    boxes = [box for group in corpus.values() for box in group if box]
+    lines = sorted({spoken(box) for box in boxes})
+    (STORE / "story_scenes.json").write_text(
         json.dumps(corpus, indent=1, ensure_ascii=False), encoding="utf-8")
     (STORE / "story_lines.txt").write_text("\n".join(lines), encoding="utf-8")
-    print(f"\n{len(lines)} distinct lines -> {STORE}")
+    print(f"\n{len(corpus)} files, {len(boxes)} text boxes, "
+          f"{len(lines)} distinct lines -> {STORE}")
     for line in lines[:8]:
         print(f"    {line[:88]}")
     return 0
+
+
+def stored_game_path() -> Path | None:
+    """The game dump the desktop app was last pointed at.
+
+    This used to ask ``bt2.profiles`` for it, which never worked: that store
+    holds map and area profiles and has no ``get``, so running without --iso
+    always raised.  The desktop app is what actually knows the path, and it
+    writes it beside its own settings.
+    """
+    for root in (
+        Path(os.environ.get("LOCALAPPDATA", "")) / "DBZ BT2 Guide",
+        Path(__file__).resolve().parents[2],
+    ):
+        settings = root / "desktop-settings.json"
+        if not settings.is_file():
+            continue
+        try:
+            stored = json.loads(settings.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            continue
+        game = stored.get("game")
+        if game:
+            return Path(game)
+    return None
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--iso", default=None)
     args = parser.parse_args(argv[1:])
-    if args.iso:
-        iso_path = Path(args.iso)
-    else:
-        from bt2.profiles import default_store
-        stored = default_store().load()
-        iso_path = Path(stored.get("iso", "")) if stored else Path("")
-    if not iso_path.is_file():
+    iso_path = Path(args.iso) if args.iso else stored_game_path()
+    if not iso_path or not iso_path.is_file():
         print(f"No such ISO: {iso_path}\nPass --iso=PATH.")
         return 1
     try:

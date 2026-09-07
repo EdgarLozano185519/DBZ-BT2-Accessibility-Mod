@@ -104,6 +104,27 @@ event name that is **currently wrong**, see below. It is on a key press so that
 browsing stays quick. If the text has moved since it was last recorded, F12
 says "Looking for the subtitles", finds it again, and carries on.
 
+**The story speaks by itself.** In a Dragon Adventure cutscene, each line of
+dialogue and narration is read aloud as the game puts it on screen. There is no
+key to press — advance the scene as you normally would and the guide reads each
+text box once. Save notices, like "MEMORY CARD slot 1", are read too, so you
+know when the game has written to your card.
+
+This is the game's own text, taken from the pointer the game itself uses to
+draw it, so nothing has been transcribed and nothing is tied to English.
+
+Two things to know. It waits for a line to be stable before speaking, so there
+is a fractional pause before each box — that pause is deliberate and stops a
+half-drawn line being read. And each new line **interrupts** the one before, so
+that you always hear the box you are on rather than the one you have left; if
+you would rather hear every line in full even when it falls behind, say so and
+it can be changed.
+
+**If you ever hear a line that is not on screen** — most likely just after a
+cutscene ends — please report it. The guide cannot yet tell "text is being
+displayed" from "text was displayed a moment ago", and that is the one case
+that has never been captured.
+
 **Dragon Adventure navigation.** The original guidance: it picks an objective
 from the live minimap, tracks your position, and uses stereo direction and pitch
 plus spoken messages to steer you there.
@@ -192,8 +213,15 @@ indistinguishable from "working, nothing to say":
   event between them is still done blind
 - Dragon Library is named but its entries are not read. Ultimate Battle Z, the
   item shop, character select and battle menus are not recognised at all
-- **Story cutscene subtitles are not read.** This is the largest missing piece
-  and the next thing being worked on
+- **The scenario descriptions are not read.** The introduction to each Dragon
+  Adventure scenario sits in the game's memory and can be found, but the guide
+  cannot yet tell which one is highlighted — the same missing piece as the
+  event name below
+- **The guide cannot tell when text stops being on screen.** It reads the
+  pointer the game uses to draw text, and that pointer keeps its last value
+  after a scene ends. Three checks make a wrong read very unlikely, but the
+  one situation that has never been captured is a battle with no text box
+  showing. If you hear a line that is not on screen, please report it
 - **Battles are not accessible** beyond the game's own audio
 - The **event name** F12 reads on Game Level is **wrong on every event but the
   first**, and known to be. It is reading the first entry of the game's list of
@@ -257,7 +285,8 @@ inspection. Third-party notices and versions are in `THIRD-PARTY.txt` and the
 - **`worker/guide-worker.exe`** — a PyInstaller bundle of
   `source/tools/guide_host.py`. The UI starts it and reads its output.
 - **`source/tools/bt2/`** — the guide itself. `guide.py` holds the main loop,
-  `menus.py` reads menus, `vision.py` reads the HUD from captured frames,
+  `menus.py` reads menus, `story.py` reads the prose the game is displaying,
+  `vision.py` reads the HUD from captured frames,
   `memory.py` and `scan.py` find structures in PS2 RAM, `speech.py` and
   `speech_output.py` talk to NVDA with a SAPI fallback.
 - **`source/tools/pine_client.py`** — PCSX2's PINE IPC protocol: arbitrary reads
@@ -265,7 +294,9 @@ inspection. Third-party notices and versions are in `THIRD-PARTY.txt` and the
 
 Menu reading runs at the one point in `guide.py` where navigation guidance is
 suspended -- outside Dragon Adventure, which is exactly when the player is in a
-menu. The two can therefore never talk over one another.
+menu. The two can therefore never talk over one another. Story reading runs
+there too, but only when the menu reader does not recognise the screen, which
+is where a cutscene lives.
 
 ## The thing to understand first
 
@@ -366,8 +397,10 @@ is coherent.
 - **`recorrelate`** — re-analyse the last capture from disk.
 
 `source/tools/extract_text.py` pulls the disc's story text offline — 553
-`TXT-US-*` files, 2,458 distinct lines — with no emulator and no player
-involved. It is the filter the cutscene-subtitle work depends on.
+`TXT-US-*` files, 2,601 text boxes — with no emulator and no player involved.
+Each file is a scene and its slots are in the order the game shows them, so a
+box found in RAM identifies both the scene and how far through it the game is.
+That is the filter that made the subtitle search tractable.
 
 Captures land in `reference/`, which is git-ignored. **Never commit game
 memory, extracted text or disc images.**
@@ -426,11 +459,23 @@ from movement, and the player cannot fly. Teleport is movement the guide
 controls, so a few short teleports in known directions should teach it, saved
 per map profile.
 
-The largest untouched piece is **Dragon Adventure story subtitles**: the text is real UTF-16LE
-in the disc's `TXT-US-*` files, on-screen prose is demonstrably readable from
-RAM, and the menu subtitles prove the mechanism. The open question is only how
-to tell which line is currently displayed, since a cutscene has no cursor.
-`docs/memory-map.md` describes the method for settling it.
+**Story subtitles now work** and the way they were found is worth reading
+before hunting anything else: `docs/memory-map.md`, under *Story text*. The
+short version is that the game keeps a pointer to the string it is drawing, at
+`0x008C6244`, so no text has to be transcribed and nothing is tied to English.
+
+Two things there are worth internalising. The corpus extracted from the disc is
+a **search** tool, not a runtime dependency -- it makes "is this a real line of
+dialogue" answerable offline, which is what made the search tractable. And two
+byte-sized candidates found first matched all eight derivation captures, were
+the only two such bytes in 31 MB, and were still **wrong**; they disagreed with
+the screen on the very next scene. Verify on a transition you did not derive
+from, every time.
+
+`story_probe.py` is the tool: `capture` records RAM and a screenshot each time
+the text box changes while the player simply plays, `compare` sorts addresses
+into display slots and resident blocks, and `follow` drives the shipped reader
+from a terminal. `test_story.py` covers the reader offline, no emulator needed.
 
 ## Licensing
 

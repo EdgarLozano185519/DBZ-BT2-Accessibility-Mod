@@ -32,9 +32,11 @@ are artwork too. This one hurts more than the fixed menus, because the scenario
 list **grows with progress** while our table does not -- see Select Scenario.
 
 **Story and tutorial text is the exception.** It is real UTF-16LE text in the
-553 `TXT-US-*` files inside `ZS2US_1.AFS` -- 2,601 strings of cutscene
-dialogue, narration and tutorials. Extractable offline from the ISO. Nothing
-has been built on this yet; it is the obvious next feature.
+553 `TXT-US-*` files inside `ZS2US_1.AFS` -- 2,601 text boxes of cutscene
+dialogue, narration and tutorials, extractable offline from the ISO and now
+parsed by the disc's own format rather than scraped. See **Story text** below
+for the format, for the scenario synopses that are resident in RAM at known
+addresses, and for what is still missing before any of it can be spoken.
 
 ## Screen identification
 
@@ -196,8 +198,8 @@ Both are read on **F12**, not spoken automatically.
 **`0x00D1A782` is entry 0 of a table, not a display slot.** It was recorded as
 "the event name" from captures taken on event 00, where the two are
 indistinguishable. They are not the same thing: the address is the first entry
-of a 392-entry table of event names and story narration at a fixed `0x40`
-stride, beginning
+of a table of event names holding 230 entries in 240 granules of `0x40` each,
+beginning
 
     0x00D1A782  Mysterious Alien Warrior
     0x00D1A7C2  Kakarot
@@ -209,12 +211,31 @@ where no event name is displayed at all. So F12 does not report the current
 event; it reports the first one, always. This is the confident error the
 project treats as worse than silence, and it is live in the shipped build.
 
-Fixing it needs the index of the current event, which is not yet known. The
-table itself is regular and reading `0x00D1A782 + 0x40 * n` is enough once that
-index is found -- the story event list, still unmapped, is the obvious place to
-look for it. Long entries overflow into the following slot, so an index landing
-on a continuation reads a fragment rather than a name; that has to be rejected
-rather than spoken.
+Fixing it needs the index of the current event, which is not yet known -- the
+story event list, still unmapped, is the obvious place to look for it.
+
+**The table is not regular, and `0x00D1A782 + 0x40 * n` is the wrong fix.**
+Walking it (`python story_probe.py names`) gives 230 entries in 240 granules,
+because a name longer than 31 characters fills its granule and continues in the
+next one:
+
+    granule  38  Frieza's Ultimate Transformation!     (spans 38 and 39)
+    granule  76  New Piccolo: Desperate Resistance
+    granule  99  Three Super Saiyans Vs. Legendary Super Saiyan
+    granule 123  Destined Battle: Goku Vs. Vegeta
+    granule 166  Immortal Monster?! Evil Giant Ape Baby
+    granule 171  Ultimate Android! The Two 17s Fuse
+
+From granule 38 onwards the granule number and the event number drift apart,
+and at least one granule (200) is empty besides. Arithmetic indexing would read
+a continuation fragment -- "n!", "pe Baby", "use" -- and speak it confidently,
+which is the same class of error as the one being fixed. The table has to be
+**walked** from the start: a granule with no null terminator inside it is
+continued by the granule after it. `story_probe.names` does exactly that and is
+the reference implementation.
+
+The event names end at granule 216; granules 217 onwards hold a separate list
+of the numeric strings "00" to "22" and are not names at all.
 
 The instruction line at `0x00D179C2` is unaffected: it is the same sentence for
 every event, so a static table entry is the right answer there.
@@ -354,39 +375,208 @@ Note these menu lines are **not** among the 2,601 `TXT-US-*` story strings --
 zero matches. The game has at least two separate text sets, so reading RAM
 covers text the offline extraction misses entirely.
 
-## TODO: Dragon Adventure story subtitles
+## Story text: the disc format, and what is resident
 
-The largest remaining feature, and the reason the text work matters.
+**The disc format is fully decoded.** `extract_text.py` used to pull strings out
+of `TXT-US-*` with a regex over printable ASCII. That produced 2,458 lines and
+looked right, but silently split every line containing a typographic apostrophe
+(U+2019, 17 of them) or an ellipsis character, leaving fragments -- "Okay,
+Vegeta, now it" and "s your turn." -- that match nothing in RAM. A fragment is
+worse than a miss here: it makes the corpus filter quietly weaker exactly where
+the text is most distinctive.
 
-**What is known.** Story text exists as 2,601 real UTF-16LE strings in
-`TXT-US-*` inside `ZS2US_1.AFS`, extractable offline. On-screen prose is
-demonstrably readable from RAM. The subtitle system demonstrably works.
+Each file is self-describing, so it is now parsed rather than scraped:
 
-**What is not known.** How to tell which line is *currently* displayed. On a
-menu the cursor gives that away free; in a cutscene lines advance on their own
-and there is no cursor. A search of four menu captures found no stable pointer
-to the displayed string, so the menus appear to render by index into a block.
-Cutscenes may well differ, since they must show arbitrary lines in sequence.
+    u32   slot count            (5, 6, 10 or 30 on this disc)
+    u32   [count + 1] offsets, the last marking the end
+    ...   padding to an 8-byte boundary
+    each slot: a UTF-16LE BOM (ff fe), the text, a null terminator
 
-**The corpus now exists.** `source/tools/extract_text.py` parses the disc's
-ISO9660 directory and the AFS archive and pulls the story text out offline:
-553 `TXT-US-*` files, 2,620 strings, **2,458 distinct lines**, landing in
-`reference/corpus/` (git-ignored, like all game content). The count agrees with
-the 2,601 counted independently before, which is the check that the parsing is
-right rather than merely plausible.
+An unused slot is two equal offsets, so a slot's index is its position in the
+file. All **553 files parse, giving 2,601 text boxes** -- exactly the count
+arrived at independently before, which is the check that the format is right
+rather than merely plausible. Line breaks inside a box are real: they are where
+the game wraps its text box, and they are kept in `story_scenes.json` and
+collapsed only for speech.
 
-Two things the extractor had to learn, both of which looked like success:
-names in this archive are **not unique** -- 553 entries share 81 names -- so
-keying on the name alone silently kept one file in seven; and the archives live
-under `DATA/`, so a root-only directory search reports the disc is wrong when it
-is not.
+**A file is a scene, and the slots are in the order the game shows them.** That
+is what makes the search tractable: a box found in RAM identifies not only that
+the bytes are game text, but *which* scene and *how far through it* the game
+has got.
 
-**How to settle it.** One capture session inside a Dragon Adventure cutscene:
-capture RAM at several points as dialogue advances, then find the region whose
-contents change to a *different known corpus string* each time. The extracted
-corpus is the filter that makes this tractable -- "is this an actual line of
-game dialogue" is far more selective than "did these bytes change". Re-extract
-the corpus with `python extract_text.py`.
+    TXT-US-A-00-0@0x1018e000
+      [0] Goku and his friends were enjoying a happy reunion, when...
+      [1] ...That's definitely Kakarot. He looks exactly like his father...
+      [2] Who the heck are you?!
+      ...
+
+The series prefix says what kind of text it is: **A** is Dragon Adventure
+cutscene dialogue (414 files, 25 events), **O** is one scenario introduction
+each (26 files), **E** and **F** are tutorials and challenges.
+
+### The scenario-synopsis pool, resident at 0x00D1E3C0
+
+Scanning the kept captures with `story_probe.py scan` gives a clean split:
+
+- Main Menu, Options, Title, Dragon Library -- **no story text resident.**
+- Game Level and Select Scenario -- **123 boxes, the entire O series**, all 26
+  scenario introductions laid out in file order from `0x00D1E3C0` to
+  `0x00D24D40`, packed on `0x40` granules with their BOMs intact.
+
+So the pool sits immediately above the event-name table, and the two together
+are a Dragon Adventure text pool that loads on entering the mode.
+
+**There is no pointer table into it, and no display copy.** Searching all 31 MB
+for pointers to the pool's entries -- raw and kseg0 -- finds none, and the six
+Select Scenario captures taken at different cursor rows hold the pool
+**byte for byte identical**. Nothing stages the highlighted scenario's synopsis
+anywhere; the renderer reads the pool at a computed offset and draws it. That
+matches what the menu captures already showed, and it means reading these
+screens needs the same missing piece as the event name: **an index.**
+
+### 0x008C6244 -- a pointer to the text on screen, everywhere
+
+**Found 2026-09-07** from eight captures taken through one Dragon Adventure
+cutscene, and it is bigger than the cutscene problem it was hunting.
+
+The capture session (`story_probe.py capture`) recorded RAM and a screenshot
+together each time the text box changed, while the player advanced at their own
+pace. The screenshots gave the ground truth -- boxes 0, 1, 2, 2, 2, 3, 4, 4 of
+`TXT-US-A-00-0`, the Saibaman scene -- without anyone having to read the screen
+during the run.
+
+**The scene file is copied into RAM whole, header and all**, at `0x0109FB40`:
+slot count, offset table, then the BOM-prefixed boxes, byte for byte as on the
+disc. Text therefore starts at `+0x30`, which is where the boxes were found.
+The next scene loaded into **the same base**, so the buffer is reused rather
+than allocated per scene.
+
+`0x008C6244` holds a **pointer to the box currently being drawn**. It was the
+only address in all 31 MB that tracked the slot exactly, and the values it held
+are precisely the header's offset-table entries for those slots. It sits at the
+head of what is clearly a text-draw structure:
+
+    +0   pointer to the text
+    +4   two packed 16-bit numbers, position or extent
+    +8   the second of them again
+    +12  1.0f, +16 1.0f -- scale
+
+**It is not cutscene-specific, and that is the point.** Checked against nine
+captures it was *not* derived from, it points at whatever prose is on screen:
+
+    auto0       Main Menu       "You can set options during the game..."
+    press0      Options         "During the game you can change the camera..."
+    diff0       Game Level      "Set the Match level to your strength..."
+    library     Dragon Library  "You can read everyone's profile..."
+    events0     Select Scenario "What's wrong? Have you lost your nerve?"
+    posn0/3     Select Scenario "Man, I'm hungry..."
+
+So one address supersedes the ten hardcoded main-menu subtitle addresses and
+the shape-based search that relocates them, gives the Game Level instruction
+line without a table, and reaches Dragon Library and Select Scenario text that
+is not mapped at all.
+
+**Verified live, on scenes it was not derived from.** Read back during two
+later cutscenes, each loaded at a **different base** from the one the address
+came from (`0x0109F340`, not `0x0109FB40`), and matched against a screenshot
+taken at the same moment:
+
+    pointer said  "Krillin unleashes the full force of his anger upon the
+                   remaining Saibamen."      screen: the same, line breaks and all
+    pointer said  "Tien! My telekinesis won't work!"   screen: the same
+
+`story_probe.py follow` then read six consecutive lines aloud as the player
+advanced, with no repeat, no fragment and no line that was not on screen. That
+is the transition test the two byte candidates failed, passed three times.
+
+**It reports system text too.** One of the six lines was "MEMORY CARD slot 1" --
+not story text, but genuinely on screen, so the pointer was right and the
+mental model of "story subtitles" is too narrow. Whether a save notice should
+be spoken is a judgement for the player, not a bug to filter away silently.
+
+**It does not move between runs.** The nine screens above come from three
+separate PCSX2 sessions across two days, and `0x008C6244` read correctly in all
+of them. That is the difference between this and the ten recorded subtitle
+addresses, which came from one run and move: this needs no relocation search.
+
+**What the reader refuses, and why each check earns its place.** In
+`bt2/story.py`, covered by 28 offline checks in `test_story.py` -- nine of them
+against real captures whose expected text was read off the screenshots taken
+beside them:
+
+- The pointer must land inside EE RAM and its target must start with a BOM.
+- The text must terminate within 400 bytes; no box on this disc is longer.
+- **Control codes are refused, printable ASCII is not the test.** Eighteen real
+  story boxes contain a typographic apostrophe or an ellipsis, so an
+  ASCII-only check would have gone silent on "Okay, Vegeta, now it's your
+  turn." -- the same mistake the disc extractor made, in the place where it
+  would have been hardest to notice.
+- **Text with a `#`, `$` or `%` at the start of a line is refused.** Move lists
+  and tutorial pages mark up their layout that way; not one of the 2,601 story
+  boxes does. This is what separates a story line from the move-list text the
+  stale pointer was caught aiming at, and it is structural rather than
+  linguistic, so it is not tied to English. A `#` mid-line is an android's
+  name and is kept.
+
+**The pointer is stale whenever nothing is being displayed.** After a cutscene
+ended and a battle began it went on aiming at the last thing drawn, and was
+seen pointing at move-list text ("Charge with the triangle button") with no
+text box on screen; on the title screen (`pos0`) it aims at bytes that are not
+text at all. Reading on change alone therefore leaks **one stray line** on the
+way out of a cutscene. Two guards, both already proven elsewhere in this
+project: refuse anything that does not decode as clean text, and read only when
+the screen state says prose is up. The first is in `read_displayed` now; the
+second is not written yet and is what still stands between this and shipping.
+
+Two byte-sized candidates found first, `0x00FFB1C4` and `0x003B29BC`, matched
+the box sequence across all eight captures and were the only two bytes in 31 MB
+to do so. **Both are refuted.** On the next scene they disagreed with each other
+and with the screen, and `0x003B29BC` moved 7 to 0 between two reads seconds
+apart. An eight-sample match on slowly-incrementing counters is not the evidence
+it looks like -- which is the whole reason the rule is to verify on a transition
+the candidate was not derived from.
+
+### How the capture session actually went, and two wrong estimates
+
+No **A**-series text is resident outside a cutscene -- zero hits in every kept
+capture -- so cutscene dialogue is streamed per scene and the session had to
+happen inside one. Two things assumed beforehand turned out to be wrong, and
+both were wrong in the direction of making the work look harder than it was.
+
+**A full 31 MB read takes 0.6 seconds, not ten.** The ten-second estimate came
+from reading the subtitle-search note ("about a megabyte, well under a second")
+and scaling it up. Measuring instead of scaling would have taken one command.
+
+**A text box waits for a button press.** The scene region was byte-identical
+over fifteen seconds, so nothing runs away and there is no race to win.
+
+Together those killed the entire pause-and-coordinate protocol the plan called
+for. `story_probe.py capture` replaces it: it watches the screen, and every
+time the text box changes it records RAM and the picture together. The player
+just plays. A capture is kept only if the screen still shows the same box after
+the read finished, so a press landing mid-read cannot pair one box's picture
+with another box's memory -- that happened twice in eight captures and both
+were correctly discarded and retried.
+
+    python story_probe.py capture cut --boxes=8   # the player advances; that is all
+    python story_probe.py scan cut0               # which scene loaded, and where
+    python story_probe.py compare cut0 cut1 ...   # display slot, or resident block?
+
+`compare` sorts the addresses holding story text into the two possible answers:
+one holding a *different* known line in each capture is a display slot and is
+the whole feature; one holding the *same* line every time is a resident block
+and would report what is loaded rather than what is shown. Keeping those apart
+is the point -- `0x00D1A782` was recorded as a display slot when it is a table
+base, and still announces the first event's name on every event.
+
+In the event `compare` found **no** display slot: all eight known boxes were
+resident and static. The answer was a pointer rather than a copy, which is why
+the search that found it looked for *an address holding a pointer to the
+current box* rather than for text that changed.
+
+Note `menu_probe.py snap` stops at `0x01000000` by default. The cutscene scene
+file loaded at `0x0109FB40`, above that line, so a snap without `--full` would
+have missed the entire thing.
 
 ## Screens seen but not mapped
 
@@ -789,7 +979,14 @@ interpretable.
   so either marker could in principle shadow it, exactly as Game Level was
   shadowed. Capture it before trusting either.
 - Ultimate Battle Z and the rest are not detected at all.
-- Nothing reads the 2,601 story strings yet.
+- **The stale-pointer gate is judged, not proven.** `0x008C6244` keeps its last
+  value when nothing is on screen. Three checks make a wrong read unlikely, but
+  no capture exists of a battle with no text box showing, which is the state
+  they are meant to catch. If a stray line is ever heard, capture at that
+  moment -- it cannot be manufactured offline.
+- The **scenario synopses** are resident and readable but not spoken: the game
+  renders them from a computed offset with no display copy, so they need the
+  current-scenario index. Same missing piece as the event name.
 - The subtitle block is relocated by shape, but only within
   `0x00C00000`-`0x00D00000`. If it ever lands outside that band the search
   misses it. Widening the band costs emulator time, so it should wait until a
