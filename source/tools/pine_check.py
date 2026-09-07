@@ -23,7 +23,7 @@ import sys
 
 from pine_client import PineClient
 
-# The build START-HERE.txt documents as supported.
+# The build the README documents as supported.
 EXPECTED_SERIAL = "SLUS-21441"
 EXPECTED_CRC = "FE961D28"
 

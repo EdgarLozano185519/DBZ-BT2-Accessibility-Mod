@@ -30,7 +30,7 @@ MANIFEST = ROOT / "SHA256SUMS.txt"
 BUILD_INFO = ROOT / "BUILD-INFO.json"
 WORKER = ROOT / "worker" / "guide-worker.exe"
 
-ROOT_FILES = ["BUILD-INFO.json", "DBZ BT2 Guide.exe", "START-HERE.txt",
+ROOT_FILES = ["BUILD-INFO.json", "DBZ BT2 Guide.exe", "README.md",
               "THIRD-PARTY.txt"]
 TREES = ["worker", "licenses", "source"]
 PACKAGES = ["numpy", "scipy", "Pillow", "pywin32", "hidapi", "pyinstaller"]

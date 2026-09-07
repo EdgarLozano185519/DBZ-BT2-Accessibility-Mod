@@ -8,8 +8,14 @@ without sight.
 It reads the game's memory while it runs. It does not modify the game, the disc,
 or your saves.
 
-This package contains **no game, BIOS, emulator, save data or disc image**. You
-supply your own.
+**Windows x64.** The release version of this build is in `BUILD-INFO.json`;
+quote it when reporting a problem.
+
+This package contains **no game, BIOS, emulator, save data, memory cards, save
+states, recorded game images, RAM dumps, or prefilled map atlas**. You supply
+your own. The guide uses the memory card you configured in PCSX2 — it does not
+swap memory cards or hand you unlocked progress, and the optional teleport
+changes your live coordinates only when its pause and validation checks pass.
 
 ---
 
@@ -34,18 +40,39 @@ the guide needs is inside it.
 1. Extract the whole folder, keeping `worker` beside `DBZ BT2 Guide.exe`. Do not
    run it from inside a ZIP.
 2. Set up PCSX2 normally first: BIOS, controller, memory card.
-3. Open **DBZ BT2 Guide.exe**. On first run it searches for your PCSX2 and game;
-   pick one if several are found, then Save.
+3. Open **DBZ BT2 Guide.exe**. On first run its Settings window searches for
+   your PCSX2 and your game: running instances, installed and portable copies,
+   PCSX2's own game libraries, the common game folders and your local drives.
+   Pick one only if several are found, then Save. **Browse** is there for a
+   folder it did not think of.
 4. Choose **Open game**. With PCSX2 closed, this switches on the connection the
-   guide needs (PINE) in that installation's own settings, saving a backup of
-   your `PCSX2.ini` first.
-5. Choose **Start guide**.
+   guide needs (PINE) in that installation's own settings, keeping whatever
+   port it is configured for and saving a backup of your `PCSX2.ini` first.
+   Portable marker files and the `-portable` launch mode both work.
+5. Choose **Start guide**, then load or begin your own Dragon Adventure game.
+   **Alt+Tab** returns you to the game.
 
 You can also launch the game yourself in PCSX2 and then press Start guide; the
 Settings paths only matter for the Open game button.
 
 Guidance pauses whenever another window has focus, so you can use your screen
 reader normally without the guide talking over it.
+
+## The guide's own window
+
+It is built from standard Windows controls, so a screen reader handles it
+normally. **Tab** and **Shift+Tab** move between controls; **Enter** or
+**Space** activates a button.
+
+- **Start guide** starts the companion. **Stop guide** silences and stops it
+  while leaving the game open. Closing the guide also stops its worker.
+- **Speak guide messages** turns the guide's own speech off if you would rather
+  read it.
+- **Latest message** and **Message history** keep what was said available to
+  read back at your own pace.
+
+Speech goes through **NVDA** when it is running, and falls back to Windows SAPI
+automatically. **NVDA is not bundled** — install it yourself if you want it.
 
 ## What it does today
 
@@ -80,6 +107,11 @@ says "Looking for the subtitles", finds it again, and carries on.
 **Dragon Adventure navigation.** The original guidance: it picks an objective
 from the live minimap, tracks your position, and uses stereo direction and pitch
 plus spoken messages to steer you there.
+
+Because it reads the minimap off the screen, it needs the game window
+**visible and the minimap unobstructed**. Start in **windowed mode with the
+original HUD**; texture replacements and HUD modifications are untested and
+may stop it working.
 
 **G says how far, and which way to turn.** The tones are in world directions —
 stereo left and right mean west and east — which only helps if you can see
@@ -133,6 +165,19 @@ With the game focused:
 - **L1** on a detected DualSense — same as T
 - **S**, **F**, **U** — record what a place turned out to be
 
+## Maps and progress
+
+The atlas starts **empty** and learns maps as you visit them. A change of
+lighting alone does not create a new map.
+
+A newly discovered map is given a descriptive label and a number. Those are
+**descriptions, not the game's official names** — they are what the guide could
+tell about the place, not what it is called. To rename one: stop the guide,
+select it under **Discovered map**, type your preferred name in **Map name**,
+and choose **Save map name**. Some maps stay temporary until their identity can
+be confirmed. Learned maps are stored with your settings and logs, outside this
+folder — see *If something goes wrong*.
+
 ## What it cannot do yet
 
 Being honest about the limits, because silence from a screen reader is
@@ -159,6 +204,9 @@ indistinguishable from "working, nothing to say":
   than reading nonsense
 - Navigation is a playtest of Dragon Adventure, not whole-game accessibility.
   Unfamiliar maps still need wider testing
+- An **ambiguous objective may stay unconfirmed**. The guide says so rather than
+  inventing a route
+- This build has **not been tested on a separate, clean Windows machine**
 
 ## If something goes wrong
 
@@ -168,14 +216,35 @@ indistinguishable from "working, nothing to say":
   the Message history
 - **The runtime is missing** — extract the whole package again, with its `worker`
   folder
-- An unrecoverable startup error is written to `logs\last-worker-error.txt`
+- **The worker stopped** — the window keeps the error available; choose Start
+  guide to retry. Runtime errors are retried without closing the guide, and an
+  unrecoverable startup error is written to `logs\last-worker-error.txt`
 
-Settings, logs and learned maps live in `%LOCALAPPDATA%\DBZ BT2 Guide`.
+Settings, logs and learned maps live in `%LOCALAPPDATA%\DBZ BT2 Guide`, kept
+separate from this extracted folder and from PCSX2's own saves.
 
-When reporting a problem, include the release version, your PCSX2 version, what
-you did and what you expected, and the relevant log. Review logs before sharing;
-they can contain your map names and local paths. **Do not send game dumps, BIOS
-files or saves.**
+When reporting a problem, include the release version, your PCSX2 version, the
+map or chapter you were on, what you did and what you expected, and the
+relevant log. Review logs before sharing; they can contain your map names and
+local paths. **Do not send game dumps, BIOS files or saves.**
+
+## About this build
+
+This release omits the 44 `api-ms-win-*.dll` compatibility stubs that release
+2026.09.05-r4 carried. They forward to the Universal C Runtime, which ships
+inside Windows 10 and 11 — and Windows 10/11 x64 is what this guide requires —
+so nothing a supported system needs was lost.
+
+The `source` folder holds this guide's runtime and interface source, for
+inspection. Third-party notices and versions are in `THIRD-PARTY.txt` and the
+`licenses` folder.
+
+## Useful links
+
+- PCSX2 setup — <https://pcsx2.net/docs/setup/running/>
+- PINE setting labels, from the PCSX2 2.6.3 source —
+  <https://github.com/PCSX2/pcsx2/blob/v2.6.3/pcsx2-qt/Settings/AdvancedSettingsWidget.ui>
+- NVDA — <https://www.nvaccess.org/>
 
 ---
 
