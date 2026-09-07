@@ -173,6 +173,10 @@ def discover_world_map(pine, scanner: TableScanner) -> Surface:
         scanner.band_windows(),
         scanner.sweep_windows(),
     )
+    # Every structurally valid table seen during the sweep, kept in case none
+    # of them can be confirmed live. See the fallback below.
+    structural: dict[int, tuple] = {}
+
     for windows in tiers:
         for window in windows:
             try:
@@ -180,6 +184,8 @@ def discover_world_map(pine, scanner: TableScanner) -> Surface:
             except (ValueError, OSError):
                 continue
             candidates = tables_in_window(block, window)
+            for candidate in candidates:
+                structural.setdefault(candidate[0], candidate)
             view = FlatMemory(window.base, block)
             # Liveness, not mere structural validity, decides.  A table whose
             # map is gone stays resident -- Earth's in particular, at the very
@@ -214,6 +220,31 @@ def discover_world_map(pine, scanner: TableScanner) -> Surface:
             )
 
     scanner.invalidate()
+
+    # Nothing confirmed itself live. Liveness is decided by whether the table's
+    # own player slot follows the player, and that slot can simply stop being
+    # updated: observed on a second visit to Earth, where the slot sat frozen
+    # 345 units from the player while the map, its minimap and its eight
+    # destinations were all plainly the live ones. Refusing outright then left
+    # the player with no destinations at all on a map that was working
+    # perfectly well minutes earlier.
+    #
+    # So when exactly one well-formed table exists in the whole of RAM, use it.
+    # The structural test is strict enough to have produced no false positives
+    # across ~950 MiB, and "the only table there is" is a far weaker assumption
+    # than "the first table found", which is the failure this guarded against.
+    # Ambiguity still refuses: two tables and no liveness means genuinely not
+    # knowing which map is current.
+    if len(structural) == 1:
+        address, locations = next(iter(structural.values()))
+        return world_surface(
+            table_address=address,
+            player_address=mirror_set.authoritative,
+            locations=locations,
+            mirrors=mirror_set.all_addresses,
+            liveness_confirmed=False,
+        )
+
     raise MapNotReady(
         "No coordinate table matching the live player position was found"
     )

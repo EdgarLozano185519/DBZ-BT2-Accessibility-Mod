@@ -120,6 +120,12 @@ ARROW_MIN_SPAN = 400.0
 LOCAL_SCENE_RADIUS = 4000.0
 
 
+# How long a destination key is held before the guide gives up on serving it
+# and explains why. Long enough to ride out a pass or two that could not act,
+# short enough that the player is never left wondering.
+PENDING_ACTION_PATIENCE = 1.5
+
+
 @dataclass
 class GuideState:
     surface: Surface | None = None
@@ -138,6 +144,12 @@ class GuideState:
     # selected_index, which the guide sets for itself when it needs somewhere
     # to start from: only this means "the player chose this".
     destination_chosen: bool = False
+    # A destination key that has been read but not yet acted on. Held across
+    # passes: the pass that catches the press is often one that gives up early
+    # -- no table yet, scene not ready -- and dropping it there is why N and B
+    # appeared dead while the key was plainly arriving.
+    pending_action: str | None = None
+    pending_action_since: float = 0.0
     # The destination itself, and the words it was announced with. Held rather
     # than looked up again: the list of markers is rebuilt from the minimap
     # every frame, and re-deriving a choice from it meant a marker that dropped
@@ -1409,7 +1421,11 @@ f"{surface.describe()}."
                 # be read below the point where the loop gives up when no story
                 # objective has resolved. On a fresh map, where none has, N and
                 # B did nothing at all.
-                pending_action = destinations.poll()
+                polled = destinations.poll()
+                if polled is not None:
+                    state.pending_action = polled
+                    state.pending_action_since = time.monotonic()
+                pending_action = state.pending_action
                 try:
                     # One frame per iteration, shared by the HUD cross-check
                     # below, arrow calibration, and objective matching.
@@ -1430,11 +1446,21 @@ f"{surface.describe()}."
                         # Outside Adventure the player is usually in a menu, and
                         # this is the only point where nothing else is speaking.
                         menus.poll(self.pine, time.monotonic())
-                        if wants_direction or pending_action in ("next", "previous"):
+                        if wants_direction:
+                            self.speaker.say(
+                                "Not flying just now, so there is no heading "
+                                "to give."
+                            )
+                        if (pending_action in ("next", "previous")
+                                and time.monotonic() - state.pending_action_since
+                                > PENDING_ACTION_PATIENCE):
+                            # Held for a moment first: a press caught during a
+                            # brief gap is usually served by the next pass.
                             self.speaker.say(
                                 "Not on the world map just now, so there are "
                                 "no destinations to choose."
                             )
+                            state.pending_action = None
                         time.sleep(0.15)
                         continue
                     menus.suspend()
@@ -1450,6 +1476,17 @@ f"{surface.describe()}."
                     player = self.pine.read_vector3_many((observed.player_address,))[0]
                     observed = self.augment_local(observed, player)
                     state.memory_ready = True
+                    if not getattr(observed, "liveness_confirmed", True):
+                        # Say it once. The destinations are usable and teleport
+                        # still verifies every write, but the table could not
+                        # prove it belongs to this map, and the player should
+                        # know that rather than infer it from a surprise.
+                        self.speaker.say(
+                            "Using this map's destinations without confirmation: "
+                            "the game is not updating the check the guide "
+                            "normally uses.",
+                            once=True,
+                        )
                     if wants_direction:
                         self.announce_direction(observed, player)
                     if pending_action in ("next", "previous"):
@@ -1458,6 +1495,7 @@ f"{surface.describe()}."
                         # rather than waiting for an objective that may never
                         # arrive.
                         self.cycle_destination(observed, player, pending_action)
+                        state.pending_action = None
                         pending_action = None
                 except MapNotReady:
                     state.memory_ready = False
@@ -1472,11 +1510,14 @@ f"{surface.describe()}."
                         # teleport without interrupting that route.
                         observed = vision_world_surface()
                         player = None
-                        if pending_action in ("next", "previous"):
+                        if (pending_action in ("next", "previous")
+                                and time.monotonic() - state.pending_action_since
+                                > PENDING_ACTION_PATIENCE):
                             self.speaker.say(
                                 "The map's destinations are not readable yet. "
                                 "Keep the world map in view for a moment."
                             )
+                            state.pending_action = None
                         if wants_direction:
                             # Honest about why, rather than silent: without a
                             # coordinate table there is no position to measure
@@ -1812,7 +1853,8 @@ f"{observed.display_name} calibrated."
                 if player is not None:
                     self.track_visit(observed, player)
 
-                action = pending_action
+                action = state.pending_action
+                state.pending_action = None
                 if action in ("free", "story", "none"):
                     if not self.classify_visit(observed, action, player):
                         self.speaker.say("Nothing to record.")

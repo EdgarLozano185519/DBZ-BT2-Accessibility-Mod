@@ -338,6 +338,41 @@ The general lesson: **anything the player decided should be stored, not
 re-derived from state that the guide rebuilds.** Re-deriving turns a transient
 gap in perception into a silent change of intent.
 
+## A table's player slot can go dead while the table is still current
+
+Liveness is decided by whether the table's own player slot, at table+0x500,
+follows the live player. Returning to Earth after a story event, that slot sat
+**frozen** at (-24.8, 0.0, 10.2) while the player was at (-27.3, -138, -335) --
+a planar gap of 345 against a tolerance of 20. The table, its eight
+destinations and the minimap were all plainly the live ones; only the slot had
+stopped being written.
+
+The guide therefore refused the correct table and reported no destinations at
+all, on a map that had been working minutes earlier.
+
+**The fallback:** when nothing confirms itself live and exactly *one*
+well-formed table exists in the whole of RAM, use it, and say so once. The
+structural test is strict enough to have produced no false positives across
+~950 MiB, and "the only table there is" is a much weaker assumption than "the
+first table found", which is the failure the liveness check was written to
+prevent. Two tables and no liveness still refuses: that is genuinely not
+knowing which map is current.
+
+`Surface.liveness_confirmed` carries this, and the guide announces it rather
+than quietly presenting an unverified table as a verified one.
+
+## An input held is better than an input dropped
+
+The destination keys were being read correctly -- a spy on the poll showed
+`'next'` arriving for every press -- and still nothing happened. The pass that
+catches a press is often one that cannot act on it: no table yet, scene not
+ready. The press was read into a local, that pass gave up, and the press went
+with it.
+
+Presses are now held on the state until a pass can serve them, and only after
+`PENDING_ACTION_PATIENCE` does the guide give up and say why. Reading the input
+early is not enough; it has to survive the passes that cannot use it.
+
 ## Hotkeys must be read before the loop gives up
 
 Twice now the same fault has appeared with a different key. The loop abandons a

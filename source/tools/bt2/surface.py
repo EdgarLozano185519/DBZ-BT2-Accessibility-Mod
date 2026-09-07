@@ -25,6 +25,10 @@ class Surface:
     mirrors: tuple[int, ...] = ()
     local_right: tuple[float, float] | None = None
     local_forward: tuple[float, float] | None = None
+    # False when the table could not prove itself live and was accepted only
+    # because it was the sole one in memory. Everything still works; the guide
+    # says so once rather than pretending to a certainty it does not have.
+    liveness_confirmed: bool = True
     descriptor: tuple[int, ...] = ()
     label_key: str | None = None
 
@@ -73,6 +77,7 @@ def world_surface(
     player_address: int,
     locations: tuple[Location, ...],
     mirrors: tuple[int, ...] = (),
+    liveness_confirmed: bool = True,
 ) -> Surface:
     return Surface(
         kind=WORLD,
@@ -81,6 +86,7 @@ def world_surface(
         locations=locations,
         fingerprint=fingerprint_locations(locations),
         mirrors=mirrors,
+        liveness_confirmed=liveness_confirmed,
     )
 
 
