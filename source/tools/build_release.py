@@ -46,8 +46,15 @@ def release_files() -> list[Path]:
     found = [ROOT / name for name in ROOT_FILES]
     for tree in TREES:
         for path in sorted((ROOT / tree).rglob("*")):
-            if path.is_file() and "__pycache__" not in path.parts:
-                found.append(path)
+            if not path.is_file() or "__pycache__" in path.parts:
+                continue
+            # Running from source writes the learned atlas into source/profiles
+            # (a frozen build uses LOCALAPPDATA instead). That is the player's
+            # own data, it can carry map names they chose, and it differs per
+            # machine -- so it is never part of a release.
+            if "profiles" in path.relative_to(ROOT).parts:
+                continue
+            found.append(path)
     return [p for p in found if p.is_file() and p != MANIFEST]
 
 

@@ -34,7 +34,12 @@ from .discovery import (
     scan_local_entities,
     validate_game,
 )
-from .hotkeys import DestinationHotkeys, TeleportHotkeys, desktop_input_allowed
+from .hotkeys import (
+    DestinationHotkeys,
+    DirectionHotkey,
+    TeleportHotkeys,
+    desktop_input_allowed,
+)
 from .memory import (
     LOCAL_ENTITY_RADIUS,
     Location,
@@ -50,6 +55,7 @@ from .atlas import MapLabeler
 from .markers import DEFAULT_MARKER_RADIUS, MarkerLocation, MinimapInventory
 from .navigation import (
     UNIT_NAME,
+    cardinal,
     cue_for,
     kind_from_profile,
     relative_angle,
@@ -127,9 +133,6 @@ class GuideState:
     announced_inside: bool = False
     last_callout: float | None = None
     announced_degraded: bool = False
-    # Set by the G key. Answered once, where the offset to the objective is
-    # already known, then cleared.
-    direction_requested: bool = False
     pending_world_teleport: bool = False
     pending_pause_notice: bool = False
     blocked_identity: tuple | None = None
@@ -310,38 +313,78 @@ class Guide:
             self._analysis = analyze_frame(image)
         return self._analysis
 
-    def announce_direction(self, observed, player, delta_x, delta_z,
-                           label=None, distance=None) -> None:
-        """Say which way to turn for the objective, from where the nose points.
+    def tracked_destination(self, observed, player):
+        """What G reports on: the chosen destination, else the story objective.
 
-        The guidance tones give this in world terms -- stereo left and right
-        mean west and east -- which is unusable to a player who cannot see
-        which way they are pointing. The game keeps the player's own axes in a
-        transform beside the position already tracked, so the same offset can
-        be said as a turn instead.
-
-        Spoken only when asked for, on G, so it never talks over the game or
-        the tones.
+        N and B pick among the markers the map is offering; once the player has
+        picked, that is what they mean by "the destination", so it wins. With
+        no explicit pick, the thing the guide is steering to is the answer.
         """
+        state = self.state
+        if state.selected_index is not None:
+            chosen = self.selected_location(observed, player)
+            if chosen is not None:
+                return chosen
+        objective = state.objective
+        if objective is not None:
+            if objective.location is not None:
+                return objective.location
+            if objective.screen_target is not None and not observed.is_local:
+                try:
+                    # The minimap marker converted into world coordinates, so
+                    # the distance is in the same units as everything else.
+                    return self._screen_location(observed, player, objective)
+                except Exception:
+                    return None
+        return self.selected_location(observed, player)
+
+    def announce_direction(self, observed, player) -> None:
+        """Say how far the destination is and which way to turn for it.
+
+        Answered the moment the key is pressed. It used to be deferred to the
+        guidance loop, which discards the press whenever no story objective has
+        resolved -- so the key worked only sometimes, which is worse than not
+        working at all. Nothing here needs the objective to be ready.
+
+        Distance is always given, because that is what was asked for. The turn
+        needs the player's own axes; when those cannot be read the compass
+        bearing is given instead, and said to be a compass bearing, rather than
+        dressing a direction up as a turn.
+        """
+        if player is None:
+            self.speaker.say("Position not readable, so I cannot measure a "
+                             "distance.")
+            return
+        try:
+            target = self.tracked_destination(observed, player)
+        except Exception:
+            # Answering a key press must never be able to stop guidance.
+            target = None
+        if target is None:
+            self.speaker.say("No destination selected yet.")
+            return
+
+        distance = distance_to(player, target)
+        label = getattr(target, "label", None) or "Destination"
+        delta_x = target.x - player[0]
+        delta_z = target.z - player[2]
+
         frame = None
         try:
             frame = player_frame(self.pine, observed.player_address, player)
         except Exception:
             frame = None
-        if frame is None:
-            # Better to say the direction is unknown than to give a turn that
-            # is really a compass point and let it be followed into a cliff.
-            self.speaker.say("Cannot tell which way you are facing.")
-            return
-        angle = relative_angle(delta_x, delta_z, frame[1])
+        angle = relative_angle(delta_x, delta_z, frame[1]) if frame else None
         if angle is None:
-            self.speaker.say("No direction to give from here.")
+            heading = cardinal(delta_x, delta_z)[1]
+            self.speaker.say(
+                f"{label}, {distance:.0f} {UNIT_NAME} {heading}. "
+                "Cannot tell which way you are facing."
+            )
             return
-        name = label or "Objective"
-        sentence = f"{name}, {turn_phrase(angle)}"
-        if distance is not None:
-            sentence += f", {distance:.0f} {UNIT_NAME}"
-        self.speaker.say(sentence + ".")
+        self.speaker.say(
+            f"{label}, {turn_phrase(angle)}, {distance:.0f} {UNIT_NAME}."
+        )
 
     def navigation_scene_ready(self, analysis) -> bool:
         """Suspend immediately outside Adventure; reacquire after three frames.
@@ -1283,6 +1326,8 @@ f"{surface.describe()}."
         )
         hotkeys = TeleportHotkeys()
         destinations = DestinationHotkeys()
+        # Polled early, unlike the destination keys: see DirectionHotkey.
+        direction_key = DirectionHotkey()
         # Menus are read only while navigation guidance is suspended, so the two
         # can never talk over one another.
         from .menus import MenuReader
@@ -1357,6 +1402,8 @@ f"{surface.describe()}."
                     player = self.pine.read_vector3_many((observed.player_address,))[0]
                     observed = self.augment_local(observed, player)
                     state.memory_ready = True
+                    if direction_key.pressed():
+                        self.announce_direction(observed, player)
                 except MapNotReady:
                     state.memory_ready = False
                     fallback_analysis = self.analyze(captured)
@@ -1370,6 +1417,14 @@ f"{surface.describe()}."
                         # teleport without interrupting that route.
                         observed = vision_world_surface()
                         player = None
+                        if direction_key.pressed():
+                            # Honest about why, rather than silent: without a
+                            # coordinate table there is no position to measure
+                            # a distance or a heading from.
+                            self.speaker.say(
+                                "Position not readable yet, so I cannot say "
+                                "which way to turn."
+                            )
                     else:
                         state.ready_count = 0
                         state.ready_identity = None
@@ -1690,15 +1745,18 @@ f"{observed.display_name} calibrated."
                         self.speaker.say("Nothing to record.")
                     time.sleep(0.15)
                     continue
-                if action == "direction":
-                    # Answered on the next pass, which is where the offset to
-                    # the objective has been worked out.
-                    state.direction_requested = True
-                    time.sleep(0.05)
-                    continue
                 if action is not None and not observed.is_local:
-                    if self.selector.casefold() == "objective":
-                        if action == "repeat":
+                    if action in ("next", "previous"):
+                        # Cycling was refused while following the story marker,
+                        # which left no way to ask about anything else on the
+                        # map. It now always picks, and G reports whatever is
+                        # picked. The tones keep following the story objective;
+                        # changing what they steer to is a separate decision.
+                        self.cycle_destination(observed, player, action)
+                        if self.selector.casefold() != "objective":
+                            state.objective = None
+                    elif self.selector.casefold() == "objective":
+                        if action == "repeat" and state.objective is not None:
                             census = state.inventory.census
                             self.speaker.say(
                                 f"{census.describe()}. "
@@ -1838,18 +1896,6 @@ f"{observed.display_name} calibrated."
                     state.announced_event_wait = False
                     state.event_confirmation_count = 0
                     state.last_event_frame_sequence = -1
-
-                    if state.direction_requested:
-                        # The minimap does not rotate: screen right is east and
-                        # screen up is north, so the screen offset gives the
-                        # world direction. Distance here is in minimap pixels,
-                        # not world units, so it is not spoken -- saying a
-                        # number in the wrong unit is worse than saying none.
-                        state.direction_requested = False
-                        self.announce_direction(
-                            observed, player, delta_x, -delta_y,
-                            state.objective.label if state.objective else None,
-                        )
 
                     scale = max(distance, 1.0)
                     pan = delta_x / scale
@@ -1991,13 +2037,6 @@ f"Inside {target.label}. {distance:.0f} units."
                 elif state.announced_inside:
                     state.announced_inside = False
                     state.last_callout = None
-
-                if state.direction_requested:
-                    state.direction_requested = False
-                    self.announce_direction(
-                        observed, player, delta_x, delta_z,
-                        getattr(target, "label", None), distance,
-                    )
 
                 scale = max(distance, 1.0)
                 if (

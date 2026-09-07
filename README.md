@@ -72,18 +72,27 @@ finds it again, and carries on.
 from the live minimap, tracks your position, and uses stereo direction and pitch
 plus spoken messages to steer you there.
 
-**G says which way to turn.** The tones are in world directions — stereo left
-and right mean west and east — which only helps if you can see which way you
-are pointing. G reads your actual heading out of the game and says the offset
-as a turn instead: "Objective, slightly right." It speaks only when pressed, so
-it never talks over the game or the tones.
+**G says how far, and which way to turn.** The tones are in world directions —
+stereo left and right mean west and east — which only helps if you can see
+which way you are pointing. G reads your actual heading out of the game and
+answers in your own terms: "map point 4, hard right, 1691 units."
+
+It answers every time it is pressed, whether or not the story objective has
+been worked out. If your position cannot be read it says so; if it can read
+your position but not your heading it gives the compass bearing and says that
+is what it is, rather than dressing a compass point up as a turn.
+
+**N and B choose what G reports.** They step through the destinations the map
+is offering, and G then tracks whichever you picked. The guidance tones keep
+following the story objective.
 
 With the game focused:
 
 - **F12** — the game's own text for the current screen
-- **G** — which way to turn for the objective, from where you are pointing
+- **G** — how far the destination is and which way to turn for it
+- **N** / **B** — step through the destinations on the map; G then reports the
+  one you picked
 - **R** — repeat the current destination
-- **N** / **B** — next / previous destination
 - **T** — request a teleport, then follow the spoken instructions
 - **L1** on a detected DualSense — same as T
 - **S**, **F**, **U** — record what a place turned out to be

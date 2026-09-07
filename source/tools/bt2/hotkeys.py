@@ -115,11 +115,6 @@ class DestinationHotkeys:
     VK_F = 0x46  # that was a free event
     VK_S = 0x53  # that advanced the story
     VK_U = 0x55  # nothing happens there at all
-    # Which way to turn for the current objective. On a key rather than spoken
-    # automatically: the player asked for it only when asked for, so that it
-    # never talks over the game or the guidance tones. W, A, S and D are flight
-    # controls and T, N, B, R, F and U are taken, which leaves G.
-    VK_G = 0x47  # which way is the objective from where I am pointing
 
     def __init__(self) -> None:
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -136,8 +131,7 @@ class DestinationHotkeys:
 
     def poll(self) -> str | None:
         if not desktop_input_allowed(self._user32):
-            for key in (self.VK_N,self.VK_B,self.VK_R,self.VK_F,self.VK_S,
-                        self.VK_U,self.VK_G):
+            for key in (self.VK_N,self.VK_B,self.VK_R,self.VK_F,self.VK_S,self.VK_U):
                 self._pressed(key)
             return None
         if self._pressed(self.VK_N):
@@ -152,6 +146,35 @@ class DestinationHotkeys:
             return "story"
         if self._pressed(self.VK_U):
             return "none"
-        if self._pressed(self.VK_G):
-            return "direction"
         return None
+
+
+class DirectionHotkey:
+    """G: which way to turn for the destination being tracked.
+
+    Deliberately its own object, polled early in the loop. The destination
+    keys are read far below the point where the loop gives up when no story
+    objective has resolved, so a G pressed then was silently discarded -- the
+    key appeared to work only sometimes, which is worse than not working.
+    Nothing about "which way am I pointing" depends on the objective being
+    ready, so nothing about it should wait for that.
+
+    W, A, S and D are flight controls, and T, N, B, R, F and U are taken.
+    """
+
+    VK_G = 0x47
+
+    def __init__(self) -> None:
+        self._user32 = ctypes.WinDLL("user32", use_last_error=True)
+        self._user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
+        self._user32.GetAsyncKeyState.restype = ctypes.c_short
+        self._down = False
+
+    def pressed(self) -> bool:
+        state = self._user32.GetAsyncKeyState(self.VK_G) & 0xFFFF
+        down = bool(state & 0x8000)
+        fired = down and not self._down
+        self._down = down
+        # Drain the edge while the player is reading with their screen reader,
+        # so returning to the game does not fire a stale press.
+        return fired and desktop_input_allowed(self._user32)

@@ -18,10 +18,12 @@ Menus speak through NVDA, driven by the game's own memory:
 - **Game Level** -- the difficulty chooser inside Dragon Adventure, reached
   after picking a story event. Levels 1, 2 and 3, chosen with Left and Right.
   F12 reads the event name and the instruction line, both the game's own text.
-- **G says which way to turn** while flying the world map. The guidance tones
+- **G says how far away the destination is and which way to turn** while
+  flying the world map. N and B step through the map's destinations and G
+  reports whichever is picked. The guidance tones
   are panned by world direction, so they mean nothing without knowing your
-  heading; G reads the player's own forward axis and says the objective as a
-  turn instead. On a key only, and it says when it cannot tell.
+  heading; G reads the player's own forward axis and answers as a turn plus a
+  distance. On a key only, and it says when it cannot tell.
 - **Screen detection** -- the announcer works out which screen is showing and
   picks the matching labels, or stays silent when it cannot.
 - **Menu subtitles on F12** -- the character's spoken line for the highlighted
