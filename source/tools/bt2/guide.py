@@ -1190,11 +1190,19 @@ f"Back from {label}. S story, F free, U nothing?"
         if analysis is None or not analysis.world_map_visible:
             return
         census = self.state.inventory.observe(analysis, self._frame_sequence)
-        if self.state.census_summary is None and self.state.inventory.settled:
-            self.state.census_summary = census.describe()
-            # Destination discovery is informational and must not repeatedly
-            # interrupt the objective or mask the directional tones.
-            self.speaker.say(self.state.census_summary, interrupt=False)
+        summary = census.describe()
+        if self.state.inventory.settled and summary != self.state.census_summary:
+            # Announced again when it genuinely changes, not just on arrival.
+            # Finishing a story event moves the markers while the map stays the
+            # same, and the guide used to go on describing the set it first saw.
+            # Only the description is compared, so a dot flickering under the
+            # player's arrow cannot cause chatter.
+            first = self.state.census_summary is None
+            self.state.census_summary = summary
+            self.speaker.say(
+                summary if first else f"Destinations changed: {summary}",
+                interrupt=False,
+            )
         # Kept empty deliberately: available destinations are screen objects,
         # not table locations.  N/B remains an explicit legacy table selector
         # for diagnostics, but the objective path never consults it.

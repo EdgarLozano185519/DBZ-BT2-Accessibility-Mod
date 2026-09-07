@@ -165,6 +165,14 @@ rather than behind.
 
 ### Also worth doing
 
+- **Neither new safeguard has met its real case yet.** The table chooser has
+  only been exercised against constructed pairs, because only one table has
+  ever been resident on this save; and the marker-change detection has not yet
+  seen a live story event rearrange the map. Both are unit-tested and both fail
+  safe -- the chooser refuses rather than guesses, the inventory waits seven
+  seconds before forgetting -- but neither has been proved in the situation it
+  was written for.
+
 - **Teach the map scale by teleporting rather than flying.** This is now the
   main blocker for story progress. The story objective is only a minimap
   marker, converting it to world coordinates needs a scale learned from

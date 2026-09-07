@@ -361,6 +361,34 @@ knowing which map is current.
 `Surface.liveness_confirmed` carries this, and the guide announces it rather
 than quietly presenting an unverified table as a verified one.
 
+## Choosing between resident tables, and noticing markers change
+
+Two consequences of the frozen-slot finding, both now handled.
+
+**More than one table can be resident.** The single-table fallback rescued the
+observed case but would have refused again the moment a previous map's table
+was still in memory alongside the current one. When several tables exist and
+none confirms itself live, geometry decides: the player should be standing
+inside the destinations that describe them, so a table whose padded bounding
+box excludes the player is discarded, and the nearest-destination distance
+breaks the remainder. If two tables both claim the player and neither is
+clearly closer, discovery still **refuses** -- guessing which map you are on is
+the exact failure the liveness check exists to prevent. One table on its own is
+still accepted unconditionally; there is nothing to confuse it with.
+
+**Markers change without the map changing.** `MinimapInventory` made confirmed
+destinations permanent for the visit, deliberately, so that the player's arrow
+covering a dot could not delete it. But finishing a story event rearranges the
+markers while the map stays the same, and the guide went on offering the set it
+first saw. A confirmed destination is now dropped after `LOST_FRAMES`
+consecutive frames unseen -- about seven seconds, far longer than an arrow
+lingers -- and the census is re-announced when its description changes, as
+"Destinations changed: ...". Comparing the description rather than the blobs
+means a dot flickering under the arrow cannot cause chatter.
+
+Measured: absent for 8 frames, kept; absent for 31, dropped; a new marker
+admitted normally.
+
 ## An input held is better than an input dropped
 
 The destination keys were being read correctly -- a spy on the poll showed

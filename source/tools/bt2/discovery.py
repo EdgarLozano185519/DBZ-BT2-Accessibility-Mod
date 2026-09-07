@@ -8,6 +8,8 @@ stops working.
 
 from __future__ import annotations
 
+import math
+
 import struct
 from dataclasses import dataclass
 
@@ -235,19 +237,81 @@ def discover_world_map(pine, scanner: TableScanner) -> Surface:
     # than "the first table found", which is the failure this guarded against.
     # Ambiguity still refuses: two tables and no liveness means genuinely not
     # knowing which map is current.
-    if len(structural) == 1:
-        address, locations = next(iter(structural.values()))
-        return world_surface(
-            table_address=address,
-            player_address=mirror_set.authoritative,
-            locations=locations,
-            mirrors=mirror_set.all_addresses,
-            liveness_confirmed=False,
-        )
+    if structural:
+        chosen = choose_unconfirmed_table(structural.values(), mirror_set.position)
+        if chosen is not None:
+            address, locations = chosen
+            return world_surface(
+                table_address=address,
+                player_address=mirror_set.authoritative,
+                locations=locations,
+                mirrors=mirror_set.all_addresses,
+                liveness_confirmed=False,
+            )
 
     raise MapNotReady(
         "No coordinate table matching the live player position was found"
     )
+
+
+def _player_fit(locations, player) -> tuple[bool, float]:
+    """Does this table describe ground the player is standing on?
+
+    Returns whether the player is inside the destinations' bounding box, padded
+    by the largest trigger radius, and how far the nearest destination is.
+    """
+    xs = [location.x for location in locations]
+    zs = [location.z for location in locations]
+    pad = max(location.radius for location in locations)
+    inside = (
+        min(xs) - pad <= player[0] <= max(xs) + pad
+        and min(zs) - pad <= player[2] <= max(zs) + pad
+    )
+    nearest = min(
+        math.hypot(location.x - player[0], location.z - player[2])
+        for location in locations
+    )
+    return inside, nearest
+
+
+# How much closer the winner must be than the runner-up to be believed.
+UNCONFIRMED_TABLE_MARGIN = 0.5
+
+
+def choose_unconfirmed_table(candidates, player):
+    """Pick between tables when none could prove itself live, or refuse.
+
+    Reaching here means the liveness check found nothing, which happens when
+    the game stops updating a table's player slot -- observed on a second visit
+    to Earth. With one table there is nothing to confuse it with. With several,
+    the stale one is usually the previous map's, still resident, and describing
+    ground the player is nowhere near.
+
+    So geometry decides: the player should be standing within the destinations
+    that describe them. If two tables both claim the player and neither is
+    clearly closer, this refuses. Guessing which map you are on is exactly the
+    failure the liveness check exists to prevent.
+    """
+    candidates = [entry for entry in candidates if entry[1]]
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        # Nothing to be confused with: the structural test is strict enough to
+        # stand on its own, and refusing here left the player with no
+        # destinations on a map that was working minutes earlier.
+        return candidates[0]
+
+    scored = []
+    for address, locations in candidates:
+        inside, nearest = _player_fit(locations, player)
+        if inside:
+            scored.append((nearest, address, locations))
+    if not scored:
+        return None
+    scored.sort()
+    if len(scored) > 1 and scored[0][0] > scored[1][0] * UNCONFIRMED_TABLE_MARGIN:
+        return None  # Two plausible maps and no way to tell them apart.
+    return scored[0][1], scored[0][2]
 
 
 def discover_surface(pine, scanner: TableScanner, capture=None) -> Surface:

@@ -95,6 +95,8 @@ class _SeenMarker:
     blob: Blob
     frames: list[int] = field(default_factory=list)
     confirmed: bool = False
+    # Consecutive observed frames in which a confirmed marker was not seen.
+    missing: int = 0
 
 
 class MinimapInventory:
@@ -108,6 +110,14 @@ class MinimapInventory:
 
     WINDOW = 6
     REQUIRED_SIGHTINGS = 4
+    # How many consecutive frames a confirmed destination must be absent before
+    # it is believed gone. Generous on purpose: the player's arrow sits over a
+    # dot for a second or two at a time, and losing destinations to that was
+    # the reason confirmed tracks were made permanent in the first place. But
+    # permanent was too strong -- finishing a story event changes the markers
+    # while the map stays the same, and the guide went on offering the old set.
+    # At roughly four frames a second this is about seven seconds of absence.
+    LOST_FRAMES = 30
 
     def __init__(self):
         self._tracks: list[_SeenMarker] = []
@@ -147,9 +157,16 @@ class MinimapInventory:
                 track.blob = blob
                 track.confirmed = len(track.frames) >= self.REQUIRED_SIGHTINGS
 
+        for index, track in enumerate(self._tracks):
+            if not track.confirmed:
+                continue
+            track.missing = 0 if index in claimed else track.missing + 1
+
         self._tracks = [
             track for track in self._tracks
-            if track.confirmed or track.frames[-1] > self.frames - self.WINDOW
+            if (track.confirmed and track.missing <= self.LOST_FRAMES)
+            or (not track.confirmed
+                and track.frames[-1] > self.frames - self.WINDOW)
         ]
         return self.census
 
