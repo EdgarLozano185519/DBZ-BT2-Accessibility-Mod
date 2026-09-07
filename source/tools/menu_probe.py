@@ -770,10 +770,14 @@ def keys(seconds: float = 16.0) -> int:
 
     from probe_voice import Voice
     from bt2.hotkeys import KeyWatcher
-    from bt2.windows import game_has_focus, game_windows
+    from bt2.windows import focus_game_window, game_has_focus, game_windows
 
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     print(f"game_windows() -> {len(game_windows())} render candidate(s)")
+    if not focus_game_window():
+        print("Could not bring the game to the front. Switch to it yourself,")
+        print("then run this again -- presses are refused without focus.")
+        return 1
 
     watcher = KeyWatcher([0x47])
     voice = Voice()

@@ -38,6 +38,41 @@ def game_windows():
     return render_candidates(rows,pid)
 
 
+def focus_game_window(timeout: float = 3.0) -> bool:
+    """Bring the game's render window to the front, and confirm it got there.
+
+    Any check involving a key press is meaningless unless the game has focus,
+    because the guide deliberately refuses hotkeys when it does not. Tests that
+    forgot this produced confident, wrong answers -- three synthesised presses
+    "not detected" when they had simply been refused on purpose.
+
+    Windows often declines a foreground change from a background process, so
+    the result is verified rather than assumed, and False means "tell the
+    player to switch to the game themselves".
+    """
+    import time
+
+    import win32con
+    import win32gui
+
+    candidates = game_windows()
+    if not candidates:
+        return False
+    handle = candidates[0]
+    try:
+        if win32gui.IsIconic(handle):
+            win32gui.ShowWindow(handle, win32con.SW_RESTORE)
+        win32gui.SetForegroundWindow(handle)
+    except Exception:
+        pass  # Verified below; a refusal is not an error worth raising.
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if game_has_focus():
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def game_has_focus():
     import win32gui
     # Only the render window qualifies: emulator Settings and debugger dialogs do not.

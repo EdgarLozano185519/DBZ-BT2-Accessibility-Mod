@@ -252,6 +252,26 @@ rather than behind.
   worker's loop rather than as a separate script, and the worker in `worker/`
   is built from it.
 
+## Testing with the player
+
+These are the player's stated preferences. They are not politeness; each one
+came from a test that produced a confidently wrong answer.
+
+- **Ask before running any test, and wait for a yes.** Do not start a live run
+  because it seems obviously useful.
+- **Anything involving a key press must either speak a countdown through NVDA,
+  or focus the game window itself first.** Use
+  `bt2.windows.focus_game_window()`, which brings the render window forward and
+  *verifies* it got there. Without focus the guide refuses hotkeys on purpose,
+  so a test run against an unfocused window measures nothing -- three
+  synthesised presses were once reported as "not detected" when they had simply
+  been refused as designed.
+- **Say plainly whether a test needs the player at the controls.** Synthesised
+  key presses and read-only memory checks do not; anything asking them to fly,
+  pause or press a button does.
+- **A synthesised key press goes to whichever window has focus.** If that is the
+  game, the game receives it. Say so before running one.
+
 ## Working notes
 
 - **Verify on a transition you did not derive from.** `0x0034F000` looked like a
