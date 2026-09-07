@@ -747,12 +747,29 @@ On the world map the guide follows the red minimap marker directly, and
 
 So N and B cycle the coordinate table, which is a *different* set from the
 markers -- 8 table points against 6 markers in one observed frame. The red
-story marker has no table entry, which is why cycling never announces a story
-event, and why "press N until you hear Story" was wrong advice.
+story marker has no table entry, which is why cycling never used to announce a
+story event, and why "press N until you hear Story" was wrong advice.
+
+**That is no longer true, and the change is the point of this section.** Once
+the map is calibrated the marker *can* be converted, so `cycle_destination`
+appends it as the last entry in the cycle -- "Fly northeast for 1171 units
+toward the story marker. 9 of 9." It is converted live through the projection
+on every press rather than stored, so it stays right as the player and the
+marker move. Before calibration it is simply absent from the cycle, which is
+honest: offering it would promise a teleport that cannot happen.
+
+**Choosing with N or B used to take the story marker away for good.** The first
+press set `destination_chosen`, which is cleared only by `reset_surface` -- so
+after one press T followed the chosen table point and nothing but leaving the
+map could give the story marker back. This was found by reading the code and
+then met head-on in play: the player calibrated, teleported to the story marker
+twice, pressed N to browse, and T stopped reaching it. The story slot is the
+fix; `story_selected` marks it so T and G use the live marker rather than the
+frozen pick.
 
 Converting the red marker to a world coordinate needs the minimap-to-world
 scale, learned by watching the player fly. **A player who cannot see the screen
-cannot fly**, so that route is closed to the very user this mod exists for.
+cannot fly**, so that route was closed to the very user this mod exists for.
 
 **A one-frame fit from markers to table points does not work.** Tried: solve a
 per-axis scale and offset by matching the yellow markers against the table.
@@ -766,11 +783,73 @@ to the table caused wrong-route fallbacks is well founded.
 points one at a time and trying the action button at each. Crude, but it needs
 no flying, and the player reports it as acceptable.
 
-**The unexplored idea:** teleport *is* movement. The calibrator learns from
-pairs of world delta and screen delta and does not care how the player moved,
-so a few short teleports in different directions could teach it the scale
-without flying. The Jacobian is saved per map profile, so it would be a
-one-time cost per map.
+**What is built, and confirmed in play on 2026-09-07:** teleport *is* movement. The
+calibrator learns from pairs of world delta and screen delta and does not care
+how the player moved, so `bt2/mapcal.py` on the **C** key commands six short
+hops and solves the Jacobian from those. The Jacobian is saved per map profile,
+so it is a one-time cost per map.
+
+Three things about it are worth knowing before touching it.
+
+**The hops must be small.** Not for the player's sake -- for the matching. The
+arrow is identified by following white blobs across the run, and a hop that
+moves it further than the match radius makes it a *new* blob with no history,
+which the solve then refuses as "the arrow was not visible for the whole run".
+So the first hop is a deliberately cautious probe, and the rest are sized from
+what it measured. At the documented 0.00004 scale a 461-unit probe moves the
+arrow about 25 px against a 73 px radius.
+
+**A hop must not land on a destination.** The game tests a sphere; a calibration
+hop that lands inside one starts an event the player did not choose. Every
+waypoint is checked against every table point before the run begins, and a spot
+with no clear quadrant is refused with a reason rather than risked.
+
+**The pause is what the loop nearly broke on.** A run spends half its time
+paused, and the loop gives up on the minimap after three frames without one --
+which a paused frame can be, because PCSX2 dims it below the white detector's
+threshold. `paused_holding_route` in `guide.py` already covered a paused player
+holding a route; it had to be widened to cover a calibration run, which is
+usually on a map with no route yet. Without that the run can never observe the
+pause it just asked for.
+
+The **arrow anchor** matters as much as the scale and is easy to miss.
+`locate_arrow` follows the arrow by predicting where it went, which needs a
+last known arrow position to predict from. On a map nobody has flown there is
+none, so a Jacobian alone sits unusable. `mapcal` returns the winning blob's
+final screen position with the scale, and `adopt_calibration` publishes both.
+
+**And the teleport handler used to throw that anchor away.** It cleared
+`state.last_arrow` after every world teleport, so the guide asked the player to
+"move briefly so the player arrow can be identified" -- of a player who cannot
+move, immediately after the one action that moves them. In the live run that
+line repeated eleven times in three seconds. With a confident calibration the
+anchor is now kept: the prediction accounts for the whole jump, and the search
+radius is around the *predicted* position rather than the old one.
+
+### What the first live run measured
+
+2026-09-07, the recorded "Blue landmass" profile, at a 1066x705 capture:
+
+    jacobian  [ 4.242e-05, -3e-08, 1.2e-07, -5.456e-05 ]
+    6 movements spanning 90 degrees, cross-checked to 0.04% and again to 0.06%
+
+Worth keeping because it is an independent confirmation of something this file
+already asserted from a different method. `anchor.py` reasons that the minimap
+is a fixed, unrotating, top-down view, so the projection is axis-aligned --
+`px = a*x + c`, `py = b*z + d`, with no cross terms. The measured off-diagonals
+are -3e-08 and 1.2e-07, which is zero to the precision available. The two
+diagonal terms also land either side of the 0.00004 this file documents.
+
+**The first attempt refused, and the refusal was right about the rule and wrong
+about the case.** Every hop size was rejected because the square's home corner
+sat inside a destination -- the player was dead centre of point 7, where a
+teleport had just put them. But teleporting onto a destination and pressing the
+action button is *how this mod's player crosses a map*, so that is precisely
+where they will be when they reach for calibration, and arriving is safe: the
+game enters an event on the action button, not on arrival. Home is now exempt
+from the destination check; the hops still are not. The lesson is the general
+one for this project -- a safety rule written from the outside refused the one
+position the player was overwhelmingly likely to be in.
 
 ## Why the hotkeys were unreliable
 

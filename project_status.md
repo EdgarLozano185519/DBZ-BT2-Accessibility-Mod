@@ -22,6 +22,17 @@ Menus speak through NVDA, driven by the game's own memory:
 - **Select Scenario** -- the Dragon Adventure scenario list: Saiyan Saga and
   Fateful Brothers on this save, chosen with Up and Down. Added 2026-09-07
   after the player reported it silent.
+- **C teaches this map's scale by teleporting, so T can reach the story
+  marker.** Added and **confirmed in play 2026-09-07**, twice on the Blue
+  landmass map, after which T reached the story objective. Six short commanded
+  hops, each announced -- pause, "Moved", unpause -- ending exactly where it
+  started. `bt2/mapcal.py`; `test_mapcal.py` covers it in 30 offline checks
+  that need no emulator.
+- **The story marker is the last entry in the N and B cycle**, on a calibrated
+  map. Added 2026-09-07 after the player asked, in play, whether it was --
+  which it should have been from the start. Before this, one press of N locked
+  T to a table point until the map changed, so calibrating and then browsing
+  silently took the story marker away again.
 - **N and B choose a destination, G reports it, T teleports to it.** Teleport
   followed the story marker before, so a destination picked with N or B could
   be asked about but not travelled to. An explicit choice now decides where T
@@ -117,7 +128,20 @@ numpy/scipy/Pillow) for testing menus without the full guide.
 
 ## What the player actually does
 
-Confirmed working in play, and worth not breaking:
+Confirmed working in play, and worth not breaking. **This changed on
+2026-09-07** -- the trial-and-error loop below is now the fallback rather than
+the main route.
+
+On a calibrated map:
+
+1. Press **C** once per map. Six announced hops, ending exactly where it
+   started. It says "calibrated" and the scale is saved.
+2. **N** until "the story marker" -- it is the last entry in the cycle.
+3. Pause PCSX2, press **T**, unpause. You are on it.
+4. Action button.
+
+Before **C** has run on a map, or if it refuses, the older loop still works and
+is what carried the player through several story events:
 
 1. **N and B** cycle the map's destinations, announced with distance and
    direction.
@@ -126,13 +150,14 @@ Confirmed working in play, and worth not breaking:
 4. Try the action button. If nothing happens, cycle to the next point and
    repeat.
 
-It is trial and error, because the story marker is a minimap object with no
-coordinate-table entry and the projection that would fix that needs a scale
-learned by flying. The player cannot fly and has said the trial-and-error loop
-is acceptable. It has carried them through several story events.
+That one is trial and error, because the story marker is a minimap object with
+no coordinate-table entry and converting it needs a scale that used to be
+learnable only by flying. The player cannot fly and had said the trial-and-error
+loop was acceptable.
 
-**The single improvement that would remove the guesswork** remains teaching the
-map scale by teleporting instead of flying -- see Also worth doing.
+**The guesswork is what C removes.** It has been run twice in play on the Blue
+landmass map, and T reached the story marker from it. Whether it holds on a map
+other than that one is the open question -- see item 4 under Next steps.
 
 ## The save file
 
@@ -278,21 +303,69 @@ them -- see Testing with the player.
 Follow **Adding a screen** in `docs/memory-map.md`; it is a checklist because
 this session skipped two of its steps and shipped two bugs.
 
-### 4. Teach the map scale by teleporting, not flying
+### 4. Teleport-driven calibration: works. Does it work on a second map?
 
-**The one change that would most improve play.** The story objective is a
-minimap marker with no coordinate-table entry, so reaching it means teleporting
-to table points one at a time and trying the action button. That works and the
-player accepts it, but it is guesswork.
+`bt2/mapcal.py` on the **C** key. Six commanded hops -- a probe out, back, then
+a closed square -- each one a known world displacement, so the Jacobian is
+solved from movement the guide controls rather than movement the player cannot
+produce. The last hop is the trip home, so finishing normally *is* the return;
+nothing extra has to be trusted to put the player back.
 
-The calibrator learns from pairs of world movement and screen movement and does
-not care how the player moved. Teleport is movement the guide controls, so a
-few short teleports in known directions should teach it the scale without any
-flying. The Jacobian is saved per map profile, so it is a one-time cost per
-map, after which T could go straight to the story marker.
+It reuses `calibration.py`'s `solve_jacobian`, `Calibration` and its
+`confident` test unmodified, so a scale learned this way is trusted on exactly
+the same evidence as one learned by flying, cross-check included. What it owns
+is the correspondence: `ArrowIdentifier` decides which white blob is the arrow
+from drift while the player stands still, which needs the player moving under
+their own power, so `mapcal` matches blobs across hops instead and takes the
+one track a single plausible Jacobian explains. Two tracks that both fit is
+reported as ambiguity, not resolved by picking.
 
-Needs a pause and unpause from the player per step -- four or so per map --
-unless the pause can be driven programmatically, which is worth checking first.
+**What the live run settled**, 2026-09-07, on Blue landmass at 1066x705:
+
+    jacobian  [ 4.242e-05, -3e-08, 1.2e-07, -5.456e-05 ]
+    6 movements spanning 90 degrees, cross-checked to 0.04%, and again to 0.06%
+
+Three of the four things listed here as unproven are now proven. A paused frame
+does still read as the Dragon Adventure HUD, so the run can see the pause it
+asked for. The arrow is separable from the real map's clouds over six hops.
+And the answer is independently credible: `anchor.py` argues from other evidence
+that the minimap is axis-aligned, and the measured cross terms are -3e-08 and
+1.2e-07, which is zero at this precision.
+
+**What is still open is the only thing that matters now: a second map.**
+Everything above is one map. Specifically unproven:
+
+- **A map whose scale is not near the documented 0.00004.** The probe measures
+  the scale, but the probe's own size is guessed from the coordinate table's
+  extent, and a scale far off would put the arrow outside the match radius. The
+  run refuses honestly in that case ("the minimap arrow was not visible for the
+  whole run") rather than inventing an answer, so the failure is safe -- but it
+  is a failure, and the fix would be to retry with a shorter probe rather than
+  give up. **Not done, because no map is known to need it.**
+- **A map with a different destination layout.** 89 of 117 sampled start
+  positions calibrate on Blue landmass. A denser map could refuse more often.
+
+**When the player reaches a new map, run C there and record what happens.**
+That is the single next piece of evidence this feature needs.
+
+**Two things the live run found that were nothing to do with the maths:**
+
+- **`say(once=True)` was defeated by any two notices that alternate.** It
+  compared against a single last-spoken slot, so two once-only lines each
+  cleared the other's record and both repeated for ever -- eleven times in
+  three seconds in the log. It now remembers the last eight lines.
+- **The teleport handler threw away the arrow anchor after every world
+  teleport**, so the guide asked a player who cannot move to "move briefly so
+  the player arrow can be identified", immediately after moving them. With a
+  confident calibration the anchor is now carried through the jump.
+
+**The pause is still manual, six times per run.** That is the friction worth
+removing next -- see the pause note under Also worth doing.
+
+**`cycle_destination` has no offline test.** The story slot was verified in
+play and by reading, not by a check that would catch a regression. There is no
+`test_guide.py` and building the fakes for one is a real piece of work; worth
+doing before that method is next changed.
 
 ### 5. Finish the story reader
 
@@ -329,6 +402,13 @@ manufactured offline.
   this changes behaviour that already works, so it is not done unasked.
 
 ### Also worth doing
+
+- **The N and B latch is fixed, and it was a real one.** Choosing a destination
+  used to be permanent until the map changed: `destination_chosen` is cleared
+  only by `reset_surface`. So a player who calibrated, teleported to the story
+  marker, then pressed N to hear what else was around could not get back to it.
+  That is exactly what happened in play on 2026-09-07. The story marker is now
+  the last entry in the cycle instead, so N and B reach it like anything else.
 
 - **Partly confirmed in play, 2026-09-06.** Loading a new map now updates the
   destinations correctly, and the player is progressing through the story with
@@ -382,6 +462,22 @@ manufactured offline.
   refuses garbage and move-list glyphs without knowing a single word.
 
 ## Recently finished
+
+### 2026-09-07: the map teaches its own scale
+
+- **C calibrates a map by teleporting**, and it worked the first time it was
+  run properly: two runs on Blue landmass, cross-checked to 0.04% and 0.06%,
+  after which T reached the story objective. `bt2/mapcal.py`, 30 offline checks
+  in `test_mapcal.py`.
+- **The story marker joined the N and B cycle**, which is what the player
+  expected it to do and what makes the calibration usable rather than merely
+  correct.
+- **Two long-standing annoyances went with it**: repeated once-only notices,
+  and being asked to move right after a teleport.
+- **The first attempt refused, correctly by its own rule and wrongly in fact.**
+  It would not start because the player was standing on a destination -- which
+  is where teleporting always leaves them. Recorded under *What the first live
+  run measured* in `docs/memory-map.md`.
 
 ### 2026-09-07: the story speaks
 

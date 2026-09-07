@@ -11,6 +11,7 @@ loop, and falls back to printing when no engine is available.
 
 from __future__ import annotations
 
+import collections
 import queue
 import sys
 import threading
@@ -54,6 +55,9 @@ class Speaker:
         self._voice = None
         self._thread: threading.Thread | None = None
         self._last_spoken: str | None = None
+        self._recent: collections.deque = collections.deque(
+            maxlen=self.RECENT_LINES
+        )
         self.available = False
         self.backend = "Text"
         self._closed = False
@@ -102,6 +106,13 @@ class Speaker:
             except queue.Full:
                 pass
 
+    # How many recent lines "once" remembers.  A single slot was not enough:
+    # two once-only notices that alternate each clear the other's record, so
+    # both repeat for ever.  A live run said "Using this map's destinations
+    # without confirmation" and "Tracking the minimap" back to back, eleven
+    # times in three seconds, because each reset the other.
+    RECENT_LINES = 8
+
     def say(
         self,
         text: str,
@@ -117,9 +128,10 @@ class Speaker:
         """
         if not text:
             return
-        if once and text == self._last_spoken:
+        if once and text in self._recent:
             return
         self._last_spoken = text
+        self._recent.append(text)
         if self.echo:
             _echo(text)
         if self.available and not self._closed:
@@ -134,6 +146,7 @@ class Speaker:
     def silence(self) -> None:
         """Discard queued navigation and stop SAPI when gameplay changes."""
         self._last_spoken = None
+        self._recent.clear()
         if not self.available:
             return
         while True:

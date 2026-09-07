@@ -150,23 +150,50 @@ can be reached without flying to it. The guidance tones keep following the
 story objective, so choosing a destination changes where T goes without
 changing what the tones are steering you toward.
 
+**Once the map is calibrated, the story marker is the last item in that cycle.**
+Keep pressing N past the numbered points and you reach "the story marker";
+choose it and T goes there. Before calibration it is not offered, because until
+then it is a picture on the minimap with no known place.
+
 Teleporting still requires pausing PCSX2 by hand first: writes race the
 emulator's CPU thread otherwise. The guide says so if you press T without
 pausing, every write is read back to confirm it, and a failed write is rolled
 back.
 
-**Reaching a story event.** The red story marker on the minimap is a picture,
-not a place the guide can look up, so it cannot teleport you straight to it.
-What works, and what the mod is built around, is this:
+**C teaches the map its scale, so T can reach the story marker.** Confirmed in
+play on 2026-09-07. The red story marker is a picture on the minimap, not an
+entry in the map's coordinate table, so turning it into somewhere teleport can
+write needs the minimap-to-world scale. That scale is normally learned from
+flying, which is the one thing this mod cannot ask for. C learns it from
+teleporting instead.
 
-1. **N** or **B** until you hear the destination you want to try.
-2. **G** if you want to know how far it is and which way it lies.
-3. **Pause PCSX2**, press **T**, then unpause. You are now standing on it.
-4. Try the action button. If nothing happens, go back to step 1 and try the
-   next one.
+Press **C** on the world map. It makes six short hops and puts you back exactly
+where you started, and it tells you what to do at each step: pause PCSX2, wait
+for "Moved", unpause, and again. Press C at any point to stop; it takes you home
+before it does. The scale is saved per map, so it is a one-time cost.
 
-It is trial and error, and there are usually fewer than ten places to try. It
-needs no flying, which is the point: it exists because moving accurately
+It will not start if it has nowhere safe to hop — off the edge of the map, or
+onto another destination. Standing on a destination yourself is fine: that is
+where teleporting leaves you, and the hops go around it. If it refuses it says
+which of the two got in the way, and teleporting somewhere else and pressing C
+again usually settles it.
+
+If it cannot tell the arrow from the map's clouds it says that too, and learns
+nothing, rather than saving a scale it is not sure of.
+
+**Reaching a story event.** On a calibrated map:
+
+1. **N** until you hear **"the story marker"** — it is the last item.
+2. **Pause PCSX2**, press **T**, then unpause. You are standing on it.
+3. Try the action button.
+
+Before C has run on a map, the story marker is not offered and the older loop
+is what works — press **N** or **B** through the numbered points, **G** to hear
+how far each is, teleport to each in turn and try the action button until one
+of them is the event. It is trial and error, and there are usually fewer than
+ten places to try.
+
+Both need no flying, which is the point: they exist because moving accurately
 without seeing the screen is the part that does not work.
 
 **It tells you when the map changes under it.** If the destinations are
@@ -452,12 +479,15 @@ These were learned the hard way and are worth keeping:
 **"What the player actually does"** describes the loop they rely on — worth
 reading before changing anything near navigation or teleport.
 
-The change that would most improve play is **teaching the map scale by
-teleporting rather than flying**. The story objective is a minimap marker with
-no coordinate-table entry; converting it needs a scale the calibrator learns
-from movement, and the player cannot fly. Teleport is movement the guide
-controls, so a few short teleports in known directions should teach it, saved
-per map profile.
+**The map scale is taught by teleporting rather than flying** -- `bt2/mapcal.py`,
+on the C key, working in play since 2026-09-07. The story objective is a minimap marker with no coordinate-table
+entry, so converting it needs a scale the calibrator normally learns from
+movement, and the player cannot fly. Teleport is movement the guide controls.
+Six commanded hops produce the same observations, the last one is the trip home,
+and the answer is saved per map profile. It reuses `calibration.py`'s solver and
+its confidence test unchanged; what it owns is deciding which white blob is the
+arrow, which the usual identifier settles from drift the player has to produce.
+`test_mapcal.py` covers it offline, no emulator needed.
 
 **Story subtitles now work** and the way they were found is worth reading
 before hunting anything else: `docs/memory-map.md`, under *Story text*. The

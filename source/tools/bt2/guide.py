@@ -35,6 +35,7 @@ from .discovery import (
     validate_game,
 )
 from .hotkeys import (
+    CalibrationHotkey,
     DestinationHotkeys,
     DirectionHotkey,
     TeleportHotkeys,
@@ -53,6 +54,7 @@ from .memory import (
 )
 from .anchor import ArrowSolver
 from .atlas import MapLabeler
+from .mapcal import MapCalibration, calibration_target
 from .markers import DEFAULT_MARKER_RADIUS, MarkerLocation, MinimapInventory
 from .navigation import (
     UNIT_NAME,
@@ -140,6 +142,11 @@ class GuideState:
     announced_inside: bool = False
     last_callout: float | None = None
     announced_degraded: bool = False
+    # True when the pick is the story marker rather than a table entry. It is
+    # carried separately because the marker has no table index: it is a picture
+    # on the minimap, converted through the learned scale every time it is
+    # needed rather than frozen at the moment it was chosen.
+    story_selected: bool = False
     # True once the player has picked a destination with N or B. Distinct from
     # selected_index, which the guide sets for itself when it needs somewhere
     # to start from: only this means "the player chose this".
@@ -201,6 +208,7 @@ class GuideState:
         self.objective = None
         # A destination chosen on the previous map means nothing on this one.
         self.destination_chosen = False
+        self.story_selected = False
         self.chosen_location = None
         self.chosen_name = None
         self.active_identity = None
@@ -349,7 +357,11 @@ class Guide:
         no explicit pick, the thing the guide is steering to is the answer.
         """
         state = self.state
-        if state.destination_chosen and state.chosen_location is not None:
+        if (
+            state.destination_chosen
+            and not state.story_selected
+            and state.chosen_location is not None
+        ):
             return state.chosen_location
         objective = state.objective
         if objective is not None:
@@ -847,6 +859,29 @@ f"Back from {label}. S story, F free, U nothing?"
             self.state.announced_selection = False
         return True
 
+    def story_choice(self, surface: Surface, player):
+        """The story marker as somewhere T can be sent, or None if it cannot be.
+
+        It is converted through the live projection every time rather than
+        stored, so it stays right as the player moves and as the marker moves.
+        Returns None before the map is calibrated, which is honest: until then
+        the marker is a picture with no known place, and offering it in the
+        cycle would promise a teleport that cannot happen.
+        """
+        objective = self.state.objective
+        if surface.is_local or objective is None:
+            return None
+        if objective.location is not None:
+            # Already a table entry, so it is in the list under its own name.
+            return None
+        if objective.screen_target is None:
+            return None
+        try:
+            return self._screen_location(surface, player, objective)
+        except Exception:
+            # Choosing somewhere to go must never be able to stop guidance.
+            return None
+
     def cycle_destination(self, surface: Surface, player, action: str) -> None:
         """Step through what the map is offering, story destination first."""
         available = self.state.available
@@ -889,11 +924,36 @@ f"Back from {label}. S story, F free, U nothing?"
                 "view for a moment while they are located."
             )
             return
-        current = self.selected_location(surface, player)
+
+        # The story marker sits at the end of the cycle, when the map's scale
+        # is known well enough to say where it is. It has no table entry -- it
+        # is a picture on the minimap -- which is why cycling never used to
+        # reach it, and why "press N until you hear Story" was wrong advice.
+        # Calibration is what makes it a place, so this is where it appears.
+        story = self.story_choice(surface, player)
+        points = len(surface.locations)
+        total = points + (1 if story is not None else 0)
+        if self.state.story_selected and story is not None:
+            position = points
+        else:
+            position = self.selected_location(surface, player).index
         if action == "next":
-            self.state.selected_index = (current.index + 1) % len(surface.locations)
+            position = (position + 1) % total
         elif action == "previous":
-            self.state.selected_index = (current.index - 1) % len(surface.locations)
+            position = (position - 1) % total
+        if story is not None and position == points:
+            self.state.story_selected = True
+            self.state.destination_chosen = True
+            self.state.selected_index = None
+            self.state.chosen_location = story
+            self.state.chosen_name = "the story marker"
+            cue = cue_for(player, story, "the story marker", "story")
+            self._reset_approach()
+            # The cue already names it, so the count does not repeat the name.
+            self.speaker.say(f"{cue.instruction} {total} of {total}.")
+            return
+        self.state.story_selected = False
+        self.state.selected_index = position
         chosen = self.selected_location(surface, player)
         profile = (MapProfile(surface.fingerprint) if surface.is_local else
                    self.store.map_profile(surface.fingerprint,len(surface.locations)))
@@ -914,7 +974,7 @@ f"Back from {label}. S story, F free, U nothing?"
             suffix = " Nothing here."
         self.speaker.say(
             f"{cue.instruction} Destination {chosen.index + 1} of "
-            f"{len(surface.locations)}.{suffix}"
+            f"{total}.{suffix}"
         )
 
     def _reset_approach(self) -> None:
@@ -1175,6 +1235,46 @@ f"Back from {label}. S story, F free, U nothing?"
         except OSError as error:
             self.speaker.say(f"Could not save the map profile: {error}", once=True)
 
+    # -- teleport-driven calibration -------------------------------------
+    def calibration_move(self, surface: Surface, player):
+        """A writer for one calibration hop, with teleport's own guards intact.
+
+        Nothing here is a shortcut around teleport: PCSX2 must still be paused,
+        the surface is still revalidated immediately before the write, and the
+        write is still read back and rolled back if it does not verify.  The
+        only difference is the target, which is a spot rather than a table
+        entry -- and a spot at the player's own altitude, so a hop is pure
+        horizontal movement the minimap can be expected to show.
+        """
+
+        def move(x: float, y: float, z: float) -> None:
+            teleport(
+                self.pine,
+                surface,
+                calibration_target(x, y, z),
+                self._rediscover(player),
+            )
+
+        return move
+
+    def adopt_calibration(self, surface: Surface, calibration, anchor, world):
+        """Take a finished calibration run's answer into the live guide.
+
+        Both halves are needed and only one of them is the scale.  ``locate_arrow``
+        follows the arrow by predicting where it went, which needs a last known
+        arrow position to predict from; on a map where the player has never
+        flown there is none, so a Jacobian on its own would sit unusable.  The
+        run's final sample supplies exactly that pairing.
+        """
+        calibrator = self.calibrator_for(surface)
+        calibrator.seed(calibration.jacobian)
+        # Then the real numbers over seed()'s placeholder ones, so what gets
+        # saved and reported is what this run actually measured.
+        calibrator.calibration = calibration
+        self.state.last_arrow = anchor
+        self.state.last_arrow_world = world
+        self.persist_calibration(surface)
+
     # -- naming ----------------------------------------------------------
     def survey_map(self, surface: Surface, image=None, analysis=None) -> None:
         """Build a stable inventory and announce it once per map visit.
@@ -1380,6 +1480,8 @@ f"{surface.describe()}."
         destinations = DestinationHotkeys()
         # Polled early, unlike the destination keys: see DirectionHotkey.
         direction_key = DirectionHotkey()
+        calibration_key = CalibrationHotkey()
+        mapcal = MapCalibration(self.speaker)
         # Menus are read only while navigation guidance is suspended, so the two
         # can never talk over one another.
         from .menus import MenuReader
@@ -1397,7 +1499,8 @@ f"{surface.describe()}."
             )
         self.speaker.say(
             "T teleports. N and B change local or explicitly selected "
-            "destinations. S, F or U says what a place turned out to be.",
+            "destinations. S, F or U says what a place turned out to be. "
+            "C calibrates this map so T can reach the story marker.",
             interrupt=False,
         )
 
@@ -1429,6 +1532,10 @@ f"{surface.describe()}."
                 # to be read on one branch only, so a press while the scene was
                 # not ready simply vanished.
                 wants_direction = direction_key.pressed()
+                # Read beside G and for the same reason: calibration is
+                # started on a map that has no objective yet, which is the
+                # state the loop below gives up in.
+                wants_calibration = calibration_key.pressed()
                 # Read here for the same reason: the destination keys used to
                 # be read below the point where the loop gives up when no story
                 # objective has resolved. On a fresh map, where none has, N and
@@ -1475,6 +1582,14 @@ f"{surface.describe()}."
                                 "Not flying just now, so there is no heading "
                                 "to give."
                             )
+                        if wants_calibration:
+                            if mapcal.active:
+                                mapcal.cancel()
+                            else:
+                                self.speaker.say(
+                                    "Calibration needs the world map on "
+                                    "screen. Nothing was started."
+                                )
                         if (pending_action in ("next", "previous")
                                 and time.monotonic() - state.pending_action_since
                                 > PENDING_ACTION_PATIENCE):
@@ -1658,10 +1773,20 @@ f"{surface.describe()}."
                                         "the current objective."
                                     )
                         else:
-                            paused_holding_route = (
-                                self.pine.status() == 1
-                                and state.objective is not None
-                                and state.objective.has_direction
+                            paused_holding_route = self.pine.status() == 1 and (
+                                # A calibration run spends half its time
+                                # paused by design, and usually on a map with
+                                # no objective yet -- which is the whole
+                                # reason it is running.  Without this the loop
+                                # gives up on the minimap the moment the
+                                # player does what it just asked them to do,
+                                # and the run can never see the pause it is
+                                # waiting for.
+                                mapcal.active
+                                or (
+                                    state.objective is not None
+                                    and state.objective.has_direction
+                                )
                             )
                             if paused_holding_route:
                                 # PCSX2 can dim a paused frame below the arrow
@@ -1696,6 +1821,57 @@ f"{surface.describe()}."
                     if not state.world_map_visible:
                         time.sleep(0.15)
                         continue
+
+                # Collected before the key is read, so a C pressed in the
+                # moment a run finishes starts the next one rather than
+                # discarding the answer the last one just reached.
+                finished = mapcal.take_result()
+                if finished is not None:
+                    calibration, arrow_anchor, arrow_world = finished
+                    self.adopt_calibration(
+                        observed, calibration, arrow_anchor, arrow_world
+                    )
+                    winsound.PlaySound(
+                        calibrated_tone(),
+                        winsound.SND_MEMORY | winsound.SND_NODEFAULT,
+                    )
+                    self.speaker.say(
+                        f"{observed.display_name} calibrated from "
+                        f"{calibration.describe()}. You are back where you "
+                        "started, and T can now reach the story marker."
+                    )
+
+                # Teach the projection by teleporting, when asked.
+                #
+                # This runs before the incidental-play calibration below and
+                # takes the loop over while it is going, because the two would
+                # otherwise disagree: a commanded hop is a large, deliberate
+                # jump, and feeding it to the identifier -- which decides which
+                # white blob is the arrow from how things drift while the
+                # player stands still -- would let a cloud be scored on
+                # movement it never made.
+                if wants_calibration:
+                    if mapcal.active:
+                        mapcal.cancel()
+                    else:
+                        mapcal.start(observed, player, time.monotonic())
+                if mapcal.active:
+                    # Every other key belongs to guidance that is suspended.
+                    hotkeys.poll()
+                    destinations.poll()
+                    state.pending_action = None
+                    mapcal.step(
+                        surface=observed,
+                        player=player,
+                        blobs=None if analysis is None else analysis.white_blobs,
+                        size=state.capture_size,
+                        paused=self.pine.status() == 1,
+                        move=self.calibration_move(observed, player),
+                        now=time.monotonic(),
+                        sequence=self._frame_sequence,
+                    )
+                    time.sleep(0.15)
+                    continue
 
                 # Learn this map's HUD projection from the player arrow.
                 was_confident = False
@@ -1807,7 +1983,7 @@ f"{observed.display_name} calibrated."
                     and state.objective.screen_target is not None
                 ):
                     target = self._screen_location(observed, player, state.objective)
-                if state.destination_chosen:
+                if state.destination_chosen and not state.story_selected:
                     # The player picked this with N or B, so it is what T means
                     # and what G reports. Only an explicit choice overrides the
                     # story marker -- the guide never promotes its own starting
@@ -1975,9 +2151,22 @@ f"{observed.display_name} calibrated."
                             f"{hotkey} teleport: moved to {spoken}{note}"
                         )
                         if not observed.is_local:
-                            state.last_arrow = None
-                            state.last_arrow_world = None
+                            # The calibrator's own anchor always goes: a
+                            # commanded jump is not a movement its incidental
+                            # solve should learn from.
                             self.calibrator_for(observed).reset_anchor()
+                            # The *arrow* anchor is a different thing, and
+                            # throwing it away after every teleport was making
+                            # the guide ask the player to "move briefly so the
+                            # player arrow can be identified" -- of a player who
+                            # cannot move, immediately after the one action that
+                            # moves them. With a known scale nothing has to be
+                            # re-identified: locate_arrow predicts where the
+                            # arrow went from the jump it just made.
+                            calibration = self.calibrator_for(observed).calibration
+                            if calibration is None or not calibration.confident:
+                                state.last_arrow = None
+                                state.last_arrow_world = None
                         time.sleep(0.25)
                         continue
                     except (MapNotReady, RuntimeError, TimeoutError) as error:

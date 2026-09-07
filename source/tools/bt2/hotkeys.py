@@ -82,7 +82,7 @@ _WATCHER = None
 _WATCHER_LOCK = threading.Lock()
 
 # Every key the guide reads. One thread serves all of them.
-WATCHED_KEYS = (0x54, 0x4E, 0x42, 0x52, 0x46, 0x53, 0x55, 0x47)
+WATCHED_KEYS = (0x54, 0x4E, 0x42, 0x52, 0x46, 0x53, 0x55, 0x47, 0x43)
 
 
 def shared_watcher() -> KeyWatcher:
@@ -257,4 +257,26 @@ class DirectionHotkey:
         fired = self._watcher.take(self.VK_G)
         # Drain the edge while the player is reading with their screen reader,
         # so returning to the game does not fire a stale press.
+        return fired and desktop_input_allowed(self._user32)
+
+
+class CalibrationHotkey:
+    """C: start the teleport-driven map calibration, or stop one in progress.
+
+    Its own object for the same reason as DirectionHotkey. Calibration is
+    started from the world map before any objective has resolved -- which on a
+    fresh map is most of the time -- so a key read further down the loop would
+    appear to work only sometimes.
+    """
+
+    VK_C = 0x43
+
+    def __init__(self) -> None:
+        self._user32 = ctypes.WinDLL("user32", use_last_error=True)
+        self._user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
+        self._user32.GetAsyncKeyState.restype = ctypes.c_short
+        self._watcher = shared_watcher()
+
+    def pressed(self) -> bool:
+        fired = self._watcher.take(self.VK_C)
         return fired and desktop_input_allowed(self._user32)
