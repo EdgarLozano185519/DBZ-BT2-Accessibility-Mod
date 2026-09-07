@@ -18,6 +18,10 @@ Menus speak through NVDA, driven by the game's own memory:
 - **Game Level** -- the difficulty chooser inside Dragon Adventure, reached
   after picking a story event. Levels 1, 2 and 3, chosen with Left and Right.
   F12 reads the event name and the instruction line, both the game's own text.
+- **N and B choose a destination, G reports it, T teleports to it.** Teleport
+  followed the story marker before, so a destination picked with N or B could
+  be asked about but not travelled to. An explicit choice now decides where T
+  goes; the guide never promotes its own starting guess to a decision.
 - **G says how far away the destination is and which way to turn** while
   flying the world map. N and B step through the map's destinations and G
   reports whichever is picked. The guidance tones
@@ -160,6 +164,16 @@ Good timing: the save is at the very start, so the opening cutscenes are ahead
 rather than behind.
 
 ### Also worth doing
+
+- **The pause requirement is the remaining friction in teleport.** It is a real
+  safety property -- PINE writes race the emulator's CPU thread -- but it means
+  the one feature that does not need sight still needs the player to pause
+  PCSX2 by hand and press T again. Worth checking whether the guide can pause
+  and resume the emulator itself around the write, which would make teleport a
+  single keystroke.
+- **Flying is the thing the player cannot do.** Movement is unpredictable
+  without sight, so teleport is not a convenience here; it is the primary way
+  to travel. Weight future work accordingly.
 
 - **Pan the guidance tones by heading, not by world direction.** G answers the
   question on demand, but the continuous cue is still world-absolute: stereo

@@ -134,6 +134,10 @@ class GuideState:
     announced_inside: bool = False
     last_callout: float | None = None
     announced_degraded: bool = False
+    # True once the player has picked a destination with N or B. Distinct from
+    # selected_index, which the guide sets for itself when it needs somewhere
+    # to start from: only this means "the player chose this".
+    destination_chosen: bool = False
     pending_world_teleport: bool = False
     pending_pause_notice: bool = False
     blocked_identity: tuple | None = None
@@ -322,7 +326,7 @@ class Guide:
         no explicit pick, the thing the guide is steering to is the answer.
         """
         state = self.state
-        if state.selected_index is not None:
+        if state.destination_chosen:
             chosen = self.selected_location(observed, player)
             if chosen is not None:
                 return chosen
@@ -836,6 +840,7 @@ f"Back from {label}. S story, F free, U nothing?"
             elif action == "previous":
                 position = (position - 1) % len(order)
             self.state.selected_index = order[position]
+            self.state.destination_chosen = True
             entry = available[position]
             profile = self.store.map_profile(
                 surface.fingerprint, len(surface.locations)
@@ -1700,6 +1705,19 @@ f"{observed.display_name} calibrated."
                     and state.objective.screen_target is not None
                 ):
                     target = self._screen_location(observed, player, state.objective)
+                if state.destination_chosen:
+                    # The player picked this with N or B, so it is what T means
+                    # and what G reports. Only an explicit choice overrides the
+                    # story marker -- the guide never promotes its own starting
+                    # guess to a decision the player did not make.
+                    #
+                    # The guidance tones are untouched: on a world map they
+                    # follow the minimap marker by a separate path, so choosing
+                    # a destination changes where T goes without changing what
+                    # is being flown toward.
+                    picked = self.selected_location(observed, player)
+                    if picked is not None:
+                        target = picked
 
                 # Armed local-route teleport, completed once back on a world map.
                 if state.pending_world_teleport and not observed.is_local:
@@ -1839,13 +1857,14 @@ f"{observed.display_name} calibrated."
                         player = self.pine.read_vector3_many(
                             (observed.player_address,)
                         )[0]
+                        if state.destination_chosen:
+                            note = ", the destination you chose."
+                        elif state.objective is not None and state.objective.confirmed:
+                            note = "."
+                        else:
+                            note = ", the story marker."
                         self.speaker.say(
-                            f"{hotkey} teleport: moved to {target.label}"
-                            + (
-                                "."
-                                if state.objective.confirmed
-                                else ", your selected destination."
-                            )
+                            f"{hotkey} teleport: moved to {target.label}{note}"
                         )
                         if not observed.is_local:
                             state.last_arrow = None

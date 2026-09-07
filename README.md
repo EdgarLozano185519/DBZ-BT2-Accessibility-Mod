@@ -82,18 +82,25 @@ been worked out. If your position cannot be read it says so; if it can read
 your position but not your heading it gives the compass bearing and says that
 is what it is, rather than dressing a compass point up as a turn.
 
-**N and B choose what G reports.** They step through the destinations the map
-is offering, and G then tracks whichever you picked. The guidance tones keep
-following the story objective.
+**N and B choose the destination.** They step through what the map is offering.
+G then reports whichever you picked, and **T teleports you there** — so a place
+can be reached without flying to it. The guidance tones keep following the
+story objective, so choosing a destination changes where T goes without
+changing what the tones are steering you toward.
+
+Teleporting still requires pausing PCSX2 by hand first: writes race the
+emulator's CPU thread otherwise. The guide says so if you press T without
+pausing, every write is read back to confirm it, and a failed write is rolled
+back.
 
 With the game focused:
 
 - **F12** — the game's own text for the current screen
 - **G** — how far the destination is and which way to turn for it
-- **N** / **B** — step through the destinations on the map; G then reports the
-  one you picked
+- **N** / **B** — step through the destinations on the map. G then reports the
+  one you picked, and T teleports there
+- **T** — teleport to that destination (PCSX2 must be paused first)
 - **R** — repeat the current destination
-- **T** — request a teleport, then follow the spoken instructions
 - **L1** on a detected DualSense — same as T
 - **S**, **F**, **U** — record what a place turned out to be
 
