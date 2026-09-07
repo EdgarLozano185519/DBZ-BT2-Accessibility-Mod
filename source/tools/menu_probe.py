@@ -697,6 +697,90 @@ def _correlate(
     return found
 
 
+def rowscan(screen_name: str, addresses: list[int], seconds: float = 45.0,
+            lead: int = 10, period: float = 0.1) -> int:
+    """Photograph every row the player visits, beside the bytes that changed.
+
+    `positionscan` answers the same question by capturing all 31 MB after each
+    cued press, which is how a cursor is *found*.  This is for when the
+    candidates are already known and what is wanted is their meaning: it reads
+    a handful of addresses at 10 Hz and saves a screenshot the moment they
+    change, so each distinct value lands next to a picture of the row it went
+    with.  Seconds instead of minutes, kilobytes instead of gigabytes, and no
+    cue schedule to mis-follow -- the player just moves and every state they
+    pass through is recorded.
+
+    It writes `row*.png` and never touches the `posn*` archive.
+    """
+    from probe_voice import Voice
+    from bt2 import vision
+    from bt2.menus import SCREENS
+
+    screen = next((s for s in SCREENS if s.name.lower() == screen_name.lower()),
+                  None)
+    if screen is None:
+        print(f"No marker known for {screen_name!r}.")
+        return 1
+
+    STORE.mkdir(parents=True, exist_ok=True)
+    client = PineClient(timeout=10.0)
+    voice = Voice()
+    seen: list[tuple[tuple[int, ...], str]] = []
+    try:
+        voice.say(f"Row scan. Go to {screen_name}. Starting in {lead} seconds.")
+        voice.countdown(lead, "")
+        if not _require_screen(client, screen_name):
+            voice.say(f"Wrong screen. Expected {screen_name}. Nothing captured.")
+            return 1
+        voice.say("Confirmed. Move through every row, pausing on each. "
+                  "Take your time.")
+        deadline = time.monotonic() + seconds
+        last: tuple[int, ...] | None = None
+        settled = 0
+        while time.monotonic() < deadline:
+            try:
+                values = tuple(client.read8(a) for a in addresses)
+            except Exception as error:
+                print(f"  (read failed: {type(error).__name__}: {error})")
+                break
+            if values != last:
+                last, settled = values, 0
+            else:
+                settled += 1
+            # Photograph only a value that has held still, so the picture is
+            # of a row the game has finished drawing rather than mid-slide.
+            if settled == 5 and values not in [v for v, _ in seen]:
+                name = f"row{len(seen)}"
+                try:
+                    vision.capture_game_window().save(STORE / f"{name}.png")
+                except Exception as error:
+                    print(f"  (screenshot failed: {error})")
+                seen.append((values, name))
+                print(f"  {name}: " + "  ".join(
+                    f"0x{a:08X}={v}" for a, v in zip(addresses, values)))
+                voice.say(f"{len(seen)}")
+            time.sleep(period)
+        voice.say("Row scan finished.")
+    finally:
+        client.close()
+        voice.close()
+
+    lines = [f"{name}.png  " + "  ".join(
+        f"0x{a:08X}={v}" for a, v in zip(addresses, values))
+        for values, name in seen]
+    # Written down as well as printed, so the run can be read back afterwards
+    # by whoever asked for it rather than copied out of a terminal by the
+    # player, who cannot see it.
+    (STORE / "rowscan.txt").write_text(
+        "\n".join([f"screen: {screen_name}"] + lines) + "\n", encoding="utf-8")
+    print(f"\n{len(seen)} distinct states, in {STORE}:")
+    for line in lines:
+        print(f"  {line}")
+    print("Read each row*.png to see which entry was highlighted.")
+    print(f"Also written to {STORE / 'rowscan.txt'}.")
+    return 0
+
+
 def watch(addresses: list[int], seconds: float = 20.0, period: float = 0.1) -> int:
     """Poll candidate addresses live while the cursor is moved by hand.
 
@@ -1140,6 +1224,21 @@ def main(argv: list[str]) -> int:
         return fit([int(v) for v in argv[2].split(",")])
     if command == "recorrelate":
         return recorrelate()
+    if command == "rowscan":
+        target = "Select Scenario"
+        seconds, lead = 45.0, 10
+        addresses = [int(a, 16) for a in argv[2:] if not a.startswith("-")]
+        for argument in argv[2:]:
+            if argument.startswith("--screen="):
+                target = argument.split("=", 1)[1]
+            elif argument.startswith("--seconds="):
+                seconds = float(argument.split("=", 1)[1])
+            elif argument.startswith("--lead="):
+                lead = int(argument.split("=", 1)[1])
+        if not addresses:
+            print("FAILED: give addresses in hex, e.g. rowscan D53625 B0536C")
+            return 1
+        return rowscan(target, addresses, seconds, lead)
     if command == "watch":
         addresses = [int(a, 16) for a in argv[2:] if not a.startswith("-")]
         if not addresses:
