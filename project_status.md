@@ -32,6 +32,27 @@ option's spoken line. If the text block has moved since these notes were
 written, the mod says "Looking for the subtitles.", finds it again, and carries
 on.
 
+## Releasing
+
+`python source/tools/build_release.py --release=YYYY.MM.DD-rN` stamps
+`BUILD-INFO.json` and regenerates `SHA256SUMS.txt`. `--check` verifies without
+changing anything and is the fast way to ask whether the folder is coherent.
+
+**It refuses to stamp if any runtime source is newer than the worker.** Editing
+`bt2/*.py` changes nothing until the worker is rebuilt, and a release in that
+state looks fine while behaving like the old code -- which happened during
+development and cost a confused debugging session.
+
+The manifest had gone stale because nothing regenerated it: by 2026-09-06, 26
+recorded hashes no longer matched, 48 recorded files were gone, and
+`bt2/menus.py` had never been in it at all. A manifest nobody regenerates fails
+verification for the wrong reason and teaches people to ignore it.
+
+Note that builds on this machine no longer emit the 44 `api-ms-win-*.dll`
+compatibility stubs the September 5 release carried. They forward to the
+Universal C Runtime, which ships inside Windows 10 and 11 -- the documented
+requirement -- so their absence costs a supported system nothing.
+
 ## Running and building
 
 **As a player.** Open `DBZ BT2 Guide.exe` and choose Open game, then Start

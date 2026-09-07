@@ -1,8 +1,8 @@
 {
-  "release": "2026.09.05-r4",
+  "release": "2026.09.06-r5",
   "platform": "Windows x64",
   "dependencies": {
-    "Python": "3.12.4",
+    "Python": "3.12.10",
     "NVDA controller client": "2026.2",
     "numpy": "1.26.4",
     "scipy": "1.14.0",

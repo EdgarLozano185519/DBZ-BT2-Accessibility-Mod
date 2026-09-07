@@ -69,9 +69,25 @@ They remain separate from this extracted release and from PCSX2's saves.
 
 PLAYTEST NOTES AND TROUBLESHOOTING
 
-This is a playtest of Dragon Adventure navigation, not complete menu,
-battle, or whole-game accessibility. Unfamiliar maps still need wider live
-testing. An ambiguous objective may remain unconfirmed; the guide should
+This is a playtest of Dragon Adventure navigation and of menu reading, not
+complete menu, battle, or whole-game accessibility. Unfamiliar maps still
+need wider live testing.
+
+Menus that speak: the title screen, the main menu, Options, and the Game
+Level chooser reached after picking a story event. F12 reads the game's own
+text for the current screen. Screens the guide recognises but has not mapped
+are named and then stay quiet; screens it does not recognise say so rather
+than guessing. Choosing which story event to play is still done blind, and
+story cutscene subtitles are not read yet.
+
+The event name F12 reads on the Game Level screen has only been checked
+against one story event, because only one was unlocked while testing. If it
+ever reads a name that does not match the event you chose, please report it.
+
+This release omits the api-ms-win-*.dll compatibility stubs that release
+2026.09.05-r4 carried. They forward to the Universal C Runtime, which is
+part of Windows 10 and 11, and Windows 10/11 x64 is what this guide
+requires. Nothing was lost that a supported system needs. An ambiguous objective may remain unconfirmed; the guide should
 say that rather than inventing a route. This build has not been tested on
 a separate clean Windows computer.
 
