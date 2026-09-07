@@ -182,6 +182,21 @@ should be re-offered rather than assumed blocked.
 
 Check the whole chain with `python pine_check.py`.
 
+**Two things about running the guide from a terminal**, both learned the hard
+way on 2026-09-07 and both cheap to trip over again:
+
+- **PINE serves one client at a time.** A second connection does not fail
+  cleanly, it *times out* -- so while the guide is running, `pine_check.py` and
+  any probe script will hang rather than say why. Stop the guide before reading
+  memory from a script.
+- **`guide_host.py` treats a closed stdin as "the desktop app went away".** It
+  is right to: that is how the UI signals shutdown. But a background process
+  has no stdin, so launching it from a script makes it print "Guide stopped."
+  and exit within a second. To run the guide headless, call
+  `waiting_guide("objective", speaker=Speaker())` directly and set
+  `BT2_DESKTOP_UI=1` so the hotkeys still require the game window to have
+  focus -- otherwise typing in a terminal fires teleports.
+
 ## Decisions waiting on the player
 
 None of these are blocked on work. Each changes something the player already
