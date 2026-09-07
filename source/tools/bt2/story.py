@@ -148,6 +148,17 @@ class StoryReader:
         """
         self._pending = self._spoken = None
 
+    def note_spoken(self, text: str) -> None:
+        """Record a line someone else has already read out.
+
+        F12 reads the prose on screen through the same pointer this class
+        watches.  Without this, a line the player asked for on a screen the
+        menu reader cannot name would be spoken by F12 and then announced
+        again a fraction of a second later, by this reader, as though it were
+        new.
+        """
+        self._pending = self._spoken = text
+
     def last_line(self) -> str | None:
         return self._spoken
 

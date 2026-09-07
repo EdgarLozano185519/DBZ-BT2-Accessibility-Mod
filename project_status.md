@@ -12,13 +12,19 @@ Menus speak through NVDA, driven by the game's own memory:
 
 - **Title screen** -- New Game / Load Game.
 - **Main Menu** -- all ten options, Dragon Adventure through Dragon Library.
+  It stopped being recognised at some point on 2026-09-07 and read out the
+  option subtitles instead; it is now recognised from two separate blocks,
+  finds its own block again if it has moved, and cross-checks its cursor
+  against a second copy. **Not yet confirmed in play** -- see item 1 under
+  Next steps for exactly what to listen for.
 - **Options** -- all five entries, Save and Load through Exit. The game keeps
   two copies of this cursor and both are read; if they ever disagree the mod
   stays silent rather than guess.
 - **Game Level** -- the difficulty chooser inside Dragon Adventure, reached
   after picking a story event. Levels 1, 2 and 3, chosen with Left and Right.
-  F12 reads the instruction line, the game's own text. It also reads an event
-  name, and **that part is wrong** -- see Next steps.
+  F12 reads the instruction line, the game's own text. It used to read an event
+  name as well, which was the first event's name whatever the player had
+  chosen; that is gone as of 2026-09-07.
 - **Select Scenario** -- the Dragon Adventure scenario list: Saiyan Saga and
   Fateful Brothers on this save, chosen with Up and Down. Added 2026-09-07
   after the player reported it silent.
@@ -45,9 +51,14 @@ Menus speak through NVDA, driven by the game's own memory:
   distance. On a key only, and it says when it cannot tell.
 - **Screen detection** -- the announcer works out which screen is showing and
   picks the matching labels, or stays silent when it cannot.
-- **Menu subtitles on F12** -- the character's spoken line for the highlighted
-  main menu option, read as the game's own text rather than from a table we
-  wrote. On a key press only, so it does not slow down browsing.
+- **F12 says the prose on screen, on every screen.** The character's spoken
+  line for the highlighted main menu option, the Game Level instruction line,
+  Dragon Library and Select Scenario prose, a cutscene box -- all of it, read as
+  the game's own text rather than from a table we wrote. On a key press only, so
+  it does not slow down browsing. Rebuilt 2026-09-07: it was polled below the
+  point where an unrecognised screen returned early, so on any screen the mod
+  could not name -- which is most of them -- **pressing it did nothing at all**,
+  not even say so.
 - **Story text speaks by itself.** Added 2026-09-07 and heard in play the same
   day. Cutscene dialogue and narration are announced as the game displays
   them, with no key press: the player advances the scene and each box is read.
@@ -59,17 +70,21 @@ Menus speak through NVDA, driven by the game's own memory:
 Menu reading is **part of the guide app**. `bt2/menus.py` runs inside the guide
 worker's main loop, at the one point where navigation guidance is suspended --
 outside Dragon Adventure, which is exactly when the player is in a menu. The two
-therefore never talk over one another. Press **F12** for the highlighted
-option's spoken line. If the text block has moved since these notes were
-written, the mod says "Looking for the subtitles.", finds it again, and carries
-on.
+therefore never talk over one another. Press **F12** for the prose on screen. If
+a block has moved since these notes were written, the mod says "Looking for the
+subtitles." or "Looking for the menu.", finds it again, and carries on.
 
-`bt2/story.py` runs at the same point and for the same reason, but **only when
-the menu reader does not recognise the screen** -- which is where a cutscene
-lives. That gate is not incidental: the same pointer aims at a mapped menu's
-own subtitle, so reading it everywhere would announce every subtitle
-automatically as the player browsed, undoing the deliberate choice that made
-F12 a key press.
+`bt2/story.py` runs at the same point and for the same reason, and **the menu
+reader decides whether it speaks**: `MenuReader.reads_options()` is true when
+the mod has named the screen, that screen has a mapped cursor, and the evidence
+that named it also says where that cursor is. Where it is true the option is
+spoken and the story reader stays quiet; where it is false -- a cutscene, an
+unmapped menu, Dragon Library -- the prose is all there is, so it is read.
+
+That boundary is the whole of the 2026-09-07 fix. The pointer reads a mapped
+menu's own subtitle just as happily as it reads a cutscene, so with the main
+menu unrecognised the story reader announced a subtitle for every option the
+player browsed past and never named the option itself.
 
 ## Releasing
 
@@ -122,6 +137,13 @@ and a mismatch fails at runtime rather than at build time.
 `build_announcer.ps1` builds a much smaller standalone menu reader (26 MB, no
 numpy/scipy/Pillow) for testing menus without the full guide.
 
+**The offline suites need no emulator, no game and no player**, and are the
+first thing to run after changing any of this:
+
+    ..\..\.venv\Scripts\python.exe test_menus.py    # 101 checks, 21 captures
+    ..\..\.venv\Scripts\python.exe test_story.py    # 31 checks
+    ..\..\.venv\Scripts\python.exe test_mapcal.py   # 30 checks
+
 **From source, for development**, from `source/tools`:
 
     ..\..\.venv\Scripts\python.exe menu_announcer.py --seconds=120
@@ -157,7 +179,7 @@ loop was acceptable.
 
 **The guesswork is what C removes.** It has been run twice in play on the Blue
 landmass map, and T reached the story marker from it. Whether it holds on a map
-other than that one is the open question -- see item 4 under Next steps.
+other than that one is the open question -- see item 5 under Next steps.
 
 ## The save file
 
@@ -203,36 +225,31 @@ None of these are blocked on work. Each changes something the player already
 uses, or trades one behaviour for another, so the choice is theirs rather than
 the next session's to assume. Listed most consequential first.
 
-**1. What should F12 do about the wrong event name?** It announces the first
-event's name on every event, and has since it shipped. Two options: stop
-announcing it now (one line, loses nothing that was ever true, but the key goes
-quieter), or leave it wrong until the current-event index is found. Item 1
-below has the detail. *Nothing will change here until this is answered.*
-
-**2. Should story lines interrupt or queue?** They interrupt today, so the
+**1. Should story lines interrupt or queue?** They interrupt today, so the
 player always hears the current box, but a long line is cut off if they advance
 quickly. Queuing would read every line in full and fall behind a scene that is
 still moving. Only the player can judge which is worse in play.
 
-**3. Should the pointer replace the F12 subtitle machinery?** `0x008C6244`
-reads the same subtitles that ten recorded addresses and a shape-based
-relocation search read today -- and unlike them it did not move across three
-PCSX2 runs. Replacing it deletes a moving part and the "Looking for the
-subtitles." pause. But it changes something that works, so it should be
-introduced as a change the player can judge and reject.
+**2. Should the pointer replace the F12 subtitle machinery outright?**
+`0x008C6244` is now the *fallback* for F12, so the key works everywhere; the ten
+recorded addresses are still tried first, because on a mapped screen they read
+the line belonging to the highlighted row rather than whatever is on screen.
+Deleting them would remove a moving part and the "Looking for the subtitles."
+pause. It would also be a change to something that works, so it is still the
+player's call rather than the next session's.
 
-**4. Should a stray line be tolerated while the gate is unproven?** The
-stale-pointer guard is judged, not proven -- see item 5. The alternative is to
+**3. Should a stray line be tolerated while the gate is unproven?** The
+stale-pointer guard is judged, not proven -- see item 6. The alternative is to
 read story text only after positively identifying a loaded scene file, which
 would be stricter but would also silence save notices, which the player asked
 for. Left permissive on purpose; revisit if a stray line is ever heard.
 
-**5. Should this be stamped as a release?** The worker is rebuilt and deployed
+**4. Should this be stamped as a release?** The worker is rebuilt and deployed
 but `BUILD-INFO.json` and `SHA256SUMS.txt` still describe the previous build.
 Stamping is one command and is the player's call, not something to do because
 the code changed.
 
-**6. Should the 700 MB of captures be pruned?** `reference/probe` now holds
+**5. Should the 700 MB of captures be pruned?** `reference/probe` now holds
 `cut0`-`cut7` at 31 MB each. The archive rule is one capture per screen; five
 of the eight are distinct boxes and three are duplicates. Keeping them all
 until the stale-pointer gate is settled is deliberate -- they are the evidence.
@@ -248,25 +265,52 @@ check` before theorising.** Both faults found on Game Level were invisible from
 outside the mod and obvious in one line of that output, and both were reasoned
 about wrongly first.
 
-### 1. The event name on F12 is wrong, and shipped
+### 1. The main menu goes unrecognised, and the cause is not yet proven
+
+**Fixed as far as it can be offline on 2026-09-07, but not confirmed in play.**
+This is what the player heard as "menus read the subtitles instead of the
+options": with the main menu unrecognised the guide said "Unknown screen", and
+the story reader -- which speaks wherever the menu reader cannot -- read out the
+subtitle of every option they browsed past.
+
+The logs say when it started. In the three sessions where "Main Menu" was
+announced, the screen had been reached from the title. In every session after
+Dragon Adventure had been entered it was never announced again. Two explanations
+fit and **there is no capture of the main menu taken after Dragon Adventure**,
+so neither can be settled from what is on disk:
+
+- **Its block moved.** `0x00AA15EC` is in the dynamic region and the
+  neighbouring subtitle block is already known to move between runs.
+- **A second named marker is also matching**, which detection reports as "I do
+  not know" by design.
+
+Both are now handled. A second signature in a longer-lived block names the
+screen when the near marker has gone, a bounded search finds where the near
+block went, and an ambiguous match writes the colliding screen names to the log
+without saying anything aloud. Details under **A screen can be recognised twice
+over** in `docs/memory-map.md`.
+
+**What is still owed is one live run.** If the main menu now speaks its options,
+say which of the two paths ran: the log will contain either "Main Menu moved by"
+or "several screens matched at once". If it still does not, `python
+menu_probe.py check` on that screen prints the whole picture in one go, and
+`python menu_probe.py snap mainmenu_after` at that moment is the capture that
+has been missing all along.
+
+### 2. The event name is gone from F12, and reading it properly still needs an index
 
 `0x00D1A782` was recorded as the Game Level event name. It is not a display
-slot -- it is entry 0 of a table of event names on a `0x40` granule,
-and it reads "Mysterious Alien Warrior" on every event and even on Select
-Scenario, where no event name is shown. The captures it was derived from were
-all taken on event 00, where a table base and a display slot are the same
-bytes.
+slot -- it is entry 0 of a table of event names on a `0x40` granule, and it
+reads "Mysterious Alien Warrior" on every event and even on Select Scenario,
+where no event name is shown. The captures it was derived from were all taken
+on event 00, where a table base and a display slot are the same bytes.
 
-So F12 announces the first event's name whatever the player is actually
-playing. That is the confident error this project treats as worse than silence,
-and it is in the shipped build.
+**It is no longer announced**, as of 2026-09-07, when the player asked for F12
+to be fixed. That loses nothing that was ever true, and the instruction line --
+the part that was -- is still read.
 
-Two ways out, and the second is better:
-
-- **Stop announcing it** until it can be read correctly. One line. Loses
-  nothing that was ever true.
-- **Find the current-event index.** The story event list is the likeliest
-  place for that index and needs mapping anyway.
+Reading the real one needs **the current-event index**. The story event list is
+the likeliest place for it and needs mapping anyway.
 
 **The table is not regular, so `0x00D1A782 + 0x40 * n` is not the fix** -- that
 was recorded here and is wrong. Walking it offline
@@ -277,9 +321,7 @@ continuation fragment -- "n!", "pe Baby", "use" -- and would speak it with the
 same confidence as the bug it was meant to fix. The table has to be walked;
 `story_probe.names` is the reference implementation and needs no player.
 
-Not done unasked, because it changes a key the player already uses.
-
-### 2. Verifications still owed
+### 3. Verifications still owed
 
 All cheap, all need the player at the controls. Ask before running any of
 them -- see Testing with the player.
@@ -300,7 +342,7 @@ them -- see Testing with the player.
 - **The Dragon Library marker, in a second run.** It rests on a single visit,
   unlike the main menu's and Options'.
 
-### 3. Map the remaining screens
+### 4. Map the remaining screens
 
 - **The story event list**, inside Dragon Adventure -- the screen between
   Select Scenario and Game Level, where the player is still choosing blind.
@@ -318,7 +360,7 @@ them -- see Testing with the player.
 Follow **Adding a screen** in `docs/memory-map.md`; it is a checklist because
 this session skipped two of its steps and shipped two bugs.
 
-### 4. Teleport-driven calibration: works. Does it work on a second map?
+### 5. Teleport-driven calibration: works. Does it work on a second map?
 
 `bt2/mapcal.py` on the **C** key. Six commanded hops -- a probe out, back, then
 a closed square -- each one a known world displacement, so the Jacobian is
@@ -382,7 +424,7 @@ play and by reading, not by a check that would catch a regression. There is no
 `test_guide.py` and building the fakes for one is a real piece of work; worth
 doing before that method is next changed.
 
-### 5. Finish the story reader
+### 6. Finish the story reader
 
 The reader ships and works. What is left is one unproven guard and three
 features the same discovery has made cheap.
@@ -464,7 +506,10 @@ manufactured offline.
 - The standalone `menu_announcer.py` still says "Unknown screen" on every screen
   transition, and does not have the mirror cross-check or the named-marker
   precedence. It also knows only four screens: neither Game Level nor Select
-  Scenario is in its table, so it is silent on both. The shipped
+  Scenario is in its table, so it is silent on both. Nor does it have the
+  second-signature rule, the relocation search, or the story-reader fallback on
+  F12; it was pinned to the near marker only on 2026-09-07 so that it cannot
+  name a screen and then read a cursor it has no evidence for. The shipped
   `bt2/menus.py` has all of it. It is a development tool, so this matters only
   during a long probing session -- but it no longer reflects how the mod
   behaves, and the gap is widening rather than holding steady.
@@ -477,6 +522,40 @@ manufactured offline.
   refuses garbage and move-list glyphs without knowing a single word.
 
 ## Recently finished
+
+### 2026-09-07: menus speak again, and F12 answers everywhere
+
+- **The menu option now wins over the story reader, explicitly.** One method,
+  `MenuReader.reads_options()`, decides which of the two speaks, and it is true
+  only when the mod has named the screen, that screen has a mapped cursor, and
+  the evidence that named it also locates that cursor. The old gate was
+  "the menu reader does not know this screen", which said nothing about the
+  third condition.
+- **The main menu is recognised twice over.** Five sprite names in a
+  longer-lived block name the screen when the marker beside its cursor has
+  gone; a bounded search then finds where that block went, and only then is the
+  cursor read. A screen that names itself but cannot locate its cursor stays
+  honest: it says where you are and leaves the options to the prose reader.
+- **Its cursor is now cross-checked**, against the second copy at `0x00CF9C34`
+  that was documented and never wired, as Options' and Game Level's already
+  were.
+- **F12 was dead on every screen the mod could not name**, because it was read
+  below an early return. It is read on every pass now, and falls back to the
+  display pointer, so it answers on unmapped menus and cutscenes too -- and
+  says "Nothing written on screen was found." rather than nothing at all.
+- **The wrong event name is gone from F12.** It announced the first event's
+  name on every event.
+- **Detection now writes its own diagnosis to the log.** An ambiguous match
+  names the colliding screens; a relocated block reports how far it moved.
+  Neither is spoken. Two screen faults have now been reasoned about wrongly
+  before being measured, and the log is the cheapest place to stop that.
+- **`test_menus.py` is new**: 101 offline checks over all 21 captures, with no
+  emulator and no player. Every screen's markers must match its own captures
+  and no other, in both directions; F12 must read the line the screenshot
+  shows; and a synthetically moved block must be found again.
+- **A latent rate-limit bug went with it.** Both searches compared against a
+  last-run time of 0.0, so on any clock starting near zero the first search was
+  refused -- which is every clock in a test.
 
 ### 2026-09-07: the map teaches its own scale
 

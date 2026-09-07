@@ -165,11 +165,17 @@ def detect(client: PineClient, current: Screen | None) -> Screen | None:
 
     Checking the likely answer before the alternatives keeps the common case to
     a single short read, rather than probing every screen on every poll.
+
+    Only the marker beside each screen's cursor is consulted, never the second
+    signature `bt2.menus` added for the main menu.  That one names the screen
+    without saying where its cursor is, and this tool reads the cursor
+    unconditionally -- see the Smaller, optional notes in project_status.md for
+    the rest of what this tool no longer shares with the shipped reader.
     """
-    if current is not None and current.present(client):
+    if current is not None and current.primary.present(client):
         return current
     for screen in SCREENS:
-        if screen is not current and screen.present(client):
+        if screen is not current and screen.primary.present(client):
             return screen
     return None
 

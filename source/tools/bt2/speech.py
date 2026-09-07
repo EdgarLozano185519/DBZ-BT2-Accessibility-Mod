@@ -46,6 +46,21 @@ def _echo(text: str) -> None:
         pass
 
 
+def note(text: str) -> None:
+    """Write a diagnostic line to the log without speaking it.
+
+    The desktop app captures this worker's stdout, so a line printed here ends
+    up beside everything that was spoken, timestamped by the same session, and
+    costs the player nothing -- they never hear it.
+
+    Written for the screen detector.  Twice now a screen has gone quiet in play
+    and the reason was invisible from outside the mod: whether nothing matched
+    or two things matched at once is the whole diagnosis, and it was reasoned
+    about wrongly both times.  The log is the cheapest place to record it.
+    """
+    _echo(text)
+
+
 class Speaker:
     """Queued NVDA speech, falling back to SAPI when NVDA is unavailable."""
 

@@ -16,10 +16,25 @@ own table of sprite names -- Options is recognisable by the literal text
 "mc_icon_saveload".  A readable marker beats a state number, which can only be
 trusted rather than checked.
 
+**A screen may be recognised by more than one signature, and they are not
+equal.**  The main menu's marker sits in the same allocation as its cursor, so
+finding it says where the cursor is as well.  Its second signature lives in a
+different block entirely and proves only that the screen is up.  That
+distinction is the whole point: naming a screen from evidence that says nothing
+about its cursor, and then reading that cursor anyway, is how a menu comes to
+announce an option that was never highlighted.
+
+When only the far signature matches, the near block has moved, and it is looked
+for by the game's own sprite name inside a narrow band.  Same technique as the
+subtitle search below, and for the same reason: nothing searched for here is a
+line of game text, so none of it is tied to English.
+
 The subtitle addresses were recorded in one PCSX2 run and the block moves
 between runs, so they are treated as a starting guess rather than a fact.  When
 they stop reading as text the block is found again by its shape -- ten lines at
-known spacing -- and the offset is remembered for the session.
+known spacing -- and the offset is remembered for the session.  F12 no longer
+depends on any of that succeeding: it falls back to the pointer the game draws
+with, which reads every screen and has not moved between runs.
 
 Addresses and their evidence are recorded in docs/memory-map.md.
 """
@@ -29,6 +44,7 @@ from __future__ import annotations
 import ctypes
 
 from .hotkeys import desktop_input_allowed
+from .speech import note
 
 MAX_SUBTITLE_BYTES = 400
 
@@ -43,6 +59,15 @@ SUBTITLE_SEARCH_INTERVAL = 20.0
 # A line long enough that ten of them at fixed spacing cannot be chance.
 MIN_ANCHOR_CHARACTERS = 8
 
+# The same rate limit, for the search that relocates a menu's own block.
+SCREEN_SEARCH_INTERVAL = 20.0
+SCREEN_SEARCH_STEP = 0x80000
+
+# A signature spanning less than this is read in one PINE transaction instead
+# of a byte at a time. Six screens checked per pass at one request per byte was
+# ninety round trips a frame; this is six.
+BLOCK_READ_LIMIT = 0x1000
+
 # PCSX2 binds F1 to F6, F8 and F9. F12 is unbound, so the mod can claim it.
 VK_F12 = 0x7B
 
@@ -53,13 +78,64 @@ VK_F12 = 0x7B
 MAX_UNNAMED_ROW = 16
 
 
+def _read_ascii(pine, address: int, count: int) -> bytes:
+    return bytes(pine.read8(address + offset) for offset in range(count))
+
+
+class Signature:
+    """Sprite names the game itself loaded, at addresses recorded from captures.
+
+    Every name must be present for the signature to match.  One name is enough
+    where that name is unique to the screen across every capture on disk; where
+    the only unique evidence is a run of ordinary names in a per-screen table,
+    several at fixed offsets are demanded together.  That is the same argument
+    the subtitle search makes: a coincidence would have to reproduce the whole
+    layout, not just one string.
+    """
+
+    def __init__(self, names, near_cursor: bool = False):
+        self.names = tuple(names)
+        # True when this signature lives in the same allocation as the screen's
+        # cursor, so matching it also says where the cursor is. False for a
+        # signature elsewhere in memory, which names the screen and no more.
+        self.near_cursor = near_cursor
+
+    @property
+    def first(self) -> tuple[int, bytes]:
+        return self.names[0]
+
+    def present(self, pine, shift: int = 0) -> bool:
+        low = min(address for address, _ in self.names) + shift
+        high = max(address + len(name) for address, name in self.names) + shift
+        if high - low <= BLOCK_READ_LIMIT:
+            start = low & ~7
+            size = high - start
+            size += -size % 8
+            try:
+                block = pine.read_aligned_range(start, size)
+            except Exception:
+                return self._present_bytewise(pine, shift)
+            for address, name in self.names:
+                begin = address + shift - start
+                if block[begin:begin + len(name)] != name:
+                    return False
+            return True
+        return self._present_bytewise(pine, shift)
+
+    def _present_bytewise(self, pine, shift: int) -> bool:
+        for address, name in self.names:
+            if _read_ascii(pine, address + shift, len(name)) != name:
+                return False
+        return True
+
+
 class Screen:
     """A menu: how to recognise it, where its cursor is, what its rows say."""
 
     def __init__(self, name, marker_address, marker, cursor=None, stride=1,
                  labels=None, subtitles=None, mirror=None, mirror_stride=1,
-                 context=None, in_adventure=False, weak_marker=False,
-                 unknown_row=None):
+                 in_adventure=False, weak_marker=False, unknown_row=None,
+                 alternate=None, search_band=None):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -72,11 +148,6 @@ class Screen:
         # only if both agree -- see option().
         self.mirror = mirror
         self.mirror_stride = mirror_stride
-        # Prose the game is showing about this screen -- what is being chosen,
-        # rather than which option is highlighted. Read on F12, never spoken
-        # automatically: it is the game's own text, but where it lives has been
-        # confirmed for one story event only.
-        self.context = context
         # True for menus that appear while the Dragon Adventure HUD detector
         # still reports gameplay. Those need the guide told explicitly that a
         # menu is up; see MenuReader.in_adventure_menu.
@@ -92,15 +163,26 @@ class Screen:
         # the expected consequence of playing the game, and saying nothing
         # leaves the player unable to tell a new scenario from a broken mod.
         self.unknown_row = unknown_row
+        # The recorded marker, which sits beside the cursor.
+        self.primary = Signature([(marker_address, marker)], near_cursor=True)
+        # Evidence from a second allocation, which outlives the first. It names
+        # the screen; it never vouches for the cursor.
+        self.alternate = alternate
+        # Where to look for the near block when it has moved, as (start, end).
+        # Narrow on purpose: the marker name occurs elsewhere in RAM, and a
+        # band wide enough to catch every copy could not tell them apart.
+        self.search_band = search_band
 
     @property
     def readable(self) -> bool:
         return self.cursor is not None
 
-    def present(self, pine) -> bool:
-        return _read_ascii(pine, self.marker_address, len(self.marker)) == self.marker
+    def present(self, pine, shift: int = 0) -> bool:
+        if self.primary.present(pine, shift):
+            return True
+        return self.alternate is not None and self.alternate.present(pine)
 
-    def option(self, pine) -> tuple[int, str | None, bool]:
+    def option(self, pine, shift: int = 0) -> tuple[int, str | None, bool]:
         """Return the raw cursor, its label, and whether the read is settled.
 
         An unsettled read is one the mirrors disagreed about, which means try
@@ -109,11 +191,13 @@ class Screen:
         would let one unlucky frame mute an option until the player navigated
         away and back.
         """
-        raw = pine.read8(self.cursor)
+        raw = pine.read8(self.cursor + shift)
         if raw % self.stride:
             return raw, None, True
         index = raw // self.stride
         if self.mirror is not None:
+            # The mirror is a different allocation and does not travel with the
+            # near block, so the shift is deliberately not applied to it.
             other = pine.read8(self.mirror)
             if other % self.mirror_stride:
                 return raw, None, False
@@ -134,10 +218,6 @@ class Screen:
         if index > MAX_UNNAMED_ROW:
             return None
         return self.unknown_row.format(position=index + 1)
-
-
-def _read_ascii(pine, address: int, count: int) -> bytes:
-    return bytes(pine.read8(address + offset) for offset in range(count))
 
 
 def read_subtitle(pine, address: int) -> str | None:
@@ -210,7 +290,60 @@ def find_subtitle_shift(pine, screen) -> int | None:
     return None
 
 
+def find_screen_shift(pine, screen) -> int | None:
+    """Find how far a menu's own block has moved, by the game's sprite name.
+
+    Only ever called for a screen whose *other* signature already says it is on
+    screen, so the question is not "is this the main menu" -- that is settled --
+    but "where has the game put it this time".
+
+    The name must occur exactly once in the band.  It occurs three times in the
+    31 MB of a main-menu capture, which is precisely why the band is a megabyte
+    rather than the whole of RAM: two hits mean the band can no longer tell the
+    copies apart, and choosing between them would be a guess.  The signature is
+    then re-checked at the shift, so a single accidental hit still fails.
+
+    Returns the offset to add to the recorded addresses, or None.
+    """
+    if screen.search_band is None:
+        return None
+    start, end = screen.search_band
+    address, name = screen.primary.first
+    overlap = len(name) - 1
+    found: list[int] = []
+    for window in range(start, end, SCREEN_SEARCH_STEP):
+        size = min(SCREEN_SEARCH_STEP + overlap, end + overlap - window)
+        try:
+            block = pine.read_aligned_range(window, size + (-size % 8))
+        except Exception:
+            return None
+        position = block.find(name)
+        while position >= 0:
+            hit = window + position
+            # Each window is read with an overlap so a name straddling the
+            # boundary is not missed, which lets the last one reach past the
+            # band. A hit out there is outside what was asked for.
+            if hit + len(name) <= end and hit not in found:
+                found.append(hit)
+                if len(found) > 1:
+                    return None      # Ambiguous, so nothing is claimed.
+            position = block.find(name, position + 1)
+    if not found:
+        return None
+    shift = found[0] - address
+    return shift if screen.primary.present(pine, shift) else None
+
+
 SCREENS = [
+    # The main menu is recognised twice over, from two allocations with
+    # different lifetimes. 0x00AA15EC sits 0x344 above the cursor, so finding
+    # it locates the cursor too. The five names at 0x00CF9D40-0x00CFA1C0 are
+    # entries in the per-screen sprite-name table on its 0xC0 granule; they are
+    # present in both main-menu captures and in no other screen's capture on
+    # disk, and that block survives into Dragon Library, where 0x00AA15EC has
+    # already gone. Which is the point of having it: the far signature is what
+    # still answers when the near block has been torn down and rebuilt
+    # somewhere else.
     Screen(
         "Main Menu", 0x00AA15EC, b"mc_menu_lineanim", 0x00AA12A8, 1,
         {0: "Dragon Adventure", 1: "Ultimate Battle Z",
@@ -220,6 +353,22 @@ SCREENS = [
         {0: 0x00CA9A42, 1: 0x00CA9B02, 2: 0x00CA9B82, 3: 0x00CA9C02,
          4: 0x00CA9CC2, 5: 0x00CA9D42, 6: 0x00CA9E02, 7: 0x00CA9EC2,
          8: 0x00CA9F42, 9: 0x00CA9FC2},
+        # The second copy of the cursor lives in that far block too, and is
+        # read for the same reason Options' and Game Level's are: a block that
+        # drifts takes only its own copy with it. It reads 8 on both main-menu
+        # captures, where the near cursor also reads 8, and it keeps the last
+        # main-menu selection after the screen is left -- 9 on the Dragon
+        # Library capture, 8 on the Options one, which are the rows those
+        # screens were opened from. Three values, four captures.
+        mirror=0x00CF9C34, mirror_stride=1,
+        alternate=Signature([
+            (0x00CF9D40, b"mc_yaji_down"),
+            (0x00CF9E00, b"mc_yaji_up"),
+            (0x00CFA040, b"mc_menu_off_down1"),
+            (0x00CFA100, b"mc_menu_off_up1"),
+            (0x00CFA1C0, b"mc_yaji"),
+        ]),
+        search_band=(0x00A00000, 0x00B00000),
     ),
     # The title spinner counts in twos; the main menu does not, so stride stays
     # per-screen rather than becoming a global assumption.
@@ -268,11 +417,17 @@ SCREENS = [
     # marker there can ever tell them apart. The same sprite name sits again at
     # 0x00D547C0, in the per-screen name table, where it is absent on all seven
     # Select Scenario captures. Verified across every capture on disk.
+    #
+    # F12 here used to announce an event name from 0x00D1A782 as well. That
+    # address is entry 0 of a table rather than a display slot, so it said
+    # "Mysterious Alien Warrior" whatever the player had actually chosen. It is
+    # gone; F12 reads the instruction line the game is drawing instead, which
+    # is the part that was ever true.
     Screen(
         "Game Level", 0x00D547C0, b"mc_da_5_lv_csr", 0x00B054A8, 1,
         {0: "Level 1", 1: "Level 2", 2: "Level 3"},
         {0: 0x00D179C2, 1: 0x00D179C2, 2: 0x00D179C2},
-        mirror=0x00432D71, mirror_stride=4, context=0x00D1A782,
+        mirror=0x00432D71, mirror_stride=4,
         in_adventure=True,
     ),
     # Select Scenario, the list of Dragon Adventure scenarios, reached before
@@ -317,21 +472,45 @@ class MenuReader:
 
     Runs only when navigation guidance is suspended, so menu announcements and
     route guidance can never talk over one another.
+
+    It also owns the boundary with the story reader.  Both read prose the game
+    is drawing, and on a menu they would be reading the same line, so
+    `reads_options` is the single place that decides which of them speaks --
+    and the answer is always the menu, wherever the menu has an option to give.
     """
 
-    def __init__(self, speaker):
+    def __init__(self, speaker, story=None):
         self.speaker = speaker
         self.screen: Screen | None = None
+        # False when the screen was recognised only from a signature that says
+        # nothing about where its cursor is. The screen is named; the cursor is
+        # left alone until the block it lives in has been found.
+        self.cursor_trusted = False
         self._spoken: str | None = None
         self._pending: int | None = None
         self._settled: int | None = None
         self._unknown_since: float | None = None
         self._announced_unknown = False
+        # The story reader, so a line read out on F12 is not repeated by it a
+        # moment later. Optional: the menu reader works without one.
+        self._story = story
+        # How far each screen's own block has moved from its recorded
+        # addresses, learned by find_screen_shift and kept for the session.
+        self._shifts: dict[str, int] = {}
+        # None rather than 0.0: a rate limit measured against zero refuses the
+        # very first search on any clock that starts near zero, which is every
+        # clock in a test and some of them in the wild.
+        self._last_screen_search: float | None = None
+        # The screen already searched for during this visit. A search that
+        # fails would otherwise repeat every twenty seconds for as long as the
+        # player stayed on the screen, saying "Looking for the menu." each
+        # time. Once per visit is enough; leaving and returning tries again.
+        self._searched: str | None = None
         # How far the subtitle block has moved from the recorded addresses.
         # Zero until proven otherwise: the recorded addresses are right in the
         # run they came from, and searching costs the player a pause.
         self._subtitle_shift = 0
-        self._last_subtitle_search = 0.0
+        self._last_subtitle_search: float | None = None
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
         self._user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
         self._user32.GetAsyncKeyState.restype = ctypes.c_short
@@ -342,6 +521,21 @@ class MenuReader:
         fired = down and not self._subtitle_down
         self._subtitle_down = down
         return fired and desktop_input_allowed(self._user32)
+
+    def reads_options(self) -> bool:
+        """Is the menu reader able to speak the highlighted option?
+
+        The story reader defers to this.  Both read prose the game is drawing,
+        and on a mapped menu what the game is drawing is that menu's own
+        subtitle -- so leaving both running announced a subtitle for every
+        option the player browsed past, and never named the option itself.
+
+        Where this is False there is no option to prefer: an unmapped screen, a
+        screen that can only name itself, a cutscene.  Reading the prose is
+        then the best the mod can do, and better than silence.
+        """
+        return (self.screen is not None and self.screen.readable
+                and self.cursor_trusted)
 
     def in_adventure_menu(self, pine) -> bool:
         """Is a menu showing that the HUD detector mistakes for gameplay?
@@ -360,13 +554,27 @@ class MenuReader:
             if not screen.in_adventure:
                 continue
             try:
-                if screen.present(pine):
+                if screen.present(pine, self._shifts.get(screen.name, 0)):
                     return True
             except Exception:
                 return False  # A dropped read must never suspend guidance.
         return False
 
-    def _detect(self, pine) -> Screen | None:
+    def _match(self, pine, screen) -> tuple[bool, bool]:
+        """(is this screen up, does the evidence locate its cursor)."""
+        shift = self._shifts.get(screen.name, 0)
+        if screen.primary.present(pine, shift):
+            return True, True
+        if shift and screen.primary.present(pine, 0):
+            # The block went back to where it was recorded, or the remembered
+            # shift belonged to an allocation that has since been replaced.
+            self._shifts.pop(screen.name, None)
+            return True, True
+        if screen.alternate is not None and screen.alternate.present(pine):
+            return True, False
+        return False, False
+
+    def _detect(self, pine) -> tuple[Screen | None, bool]:
         """Identify the screen, or return None rather than guess.
 
         Every screen is checked, not just the first that matches. Markers were
@@ -378,23 +586,48 @@ class MenuReader:
         Named sprite markers decide. A raw signature is consulted only when no
         name matches, and two names matching at once means the mod does not
         know where it is and says so.
+
+        Returns the screen and whether its cursor may be read.
         """
-        named = [s for s in SCREENS if not s.weak_marker and s.present(pine)]
+        named = []
+        for screen in SCREENS:
+            if screen.weak_marker:
+                continue
+            present, trusted = self._match(pine, screen)
+            if present:
+                named.append((screen, trusted))
         if len(named) == 1:
             return named[0]
         if named:
-            return None
+            # Written to the log, not spoken. Which screens collided is the one
+            # fact that separates "the marker moved" from "a stale marker is
+            # still resident", and guessing between those wasted a session.
+            note("menus: several screens matched at once, so none was named -- "
+                 + ", ".join(screen.name for screen, _ in named))
+            return None, False
+
         weak = [s for s in SCREENS if s.weak_marker and s.present(pine)]
-        return weak[0] if len(weak) == 1 else None
+        if len(weak) == 1:
+            return weak[0], True
+        return None, False
 
     def poll(self, pine, now: float) -> None:
+        # Read the key first, and on every pass. It used to be read below the
+        # point where an unrecognised screen returns early, so on any screen
+        # the mod could not name -- which is every screen it has not been
+        # taught -- F12 did nothing at all, not even say so.
+        if self._subtitle_pressed():
+            self._speak_subtitle(pine, now)
+
         try:
-            found = self._detect(pine)
+            found, trusted = self._detect(pine)
         except Exception:
             return  # A dropped read must never stop navigation guidance.
 
         if found is not self.screen:
             self.screen = found
+            self.cursor_trusted = trusted
+            self._searched = None
             self._spoken = self._settled = self._pending = None
             if found is not None:
                 self._unknown_since = None
@@ -408,6 +641,7 @@ class MenuReader:
                 self._unknown_since = now
             return
 
+        self.cursor_trusted = trusted
         if self.screen is None:
             if (not self._announced_unknown and self._unknown_since is not None
                     and now - self._unknown_since >= 1.5):
@@ -415,13 +649,19 @@ class MenuReader:
                 self.speaker.say("Unknown screen.")
             return
 
-        if self._subtitle_pressed():
-            self._speak_subtitle(pine, now)
-        if not self.screen.readable:
+        if not trusted:
+            # Named from the far signature only, so its own block has moved.
+            # Looked for on the pass after the screen was announced, so the
+            # player hears where they are before they hear the mod searching.
+            self.cursor_trusted = self._locate_block(pine, self.screen, now)
+
+        if not self.reads_options():
             return
 
         try:
-            raw, label, settled = self.screen.option(pine)
+            raw, label, settled = self.screen.option(
+                pine, self._shifts.get(self.screen.name, 0)
+            )
         except Exception:
             return
         if not settled:
@@ -454,32 +694,88 @@ class MenuReader:
             self._spoken = label
             self.speaker.say(label)
 
-    def _speak_subtitle(self, pine, now: float) -> None:
-        screen = self.screen
-        if screen is None or not screen.subtitles or not screen.readable:
-            self.speaker.say("No subtitle available.")
-            return
+    def _locate_block(self, pine, screen, now: float) -> bool:
+        """Look for a screen's own block, when only its far name matched.
+
+        Rate limited and announced, for the same reason the subtitle search is:
+        it reads a megabyte and takes a moment, and an unexplained pause is
+        indistinguishable from a crash to someone who cannot see the screen.
+
+        Returns whether the cursor may now be read.
+        """
+        if screen.search_band is None or self._searched == screen.name or (
+                self._last_screen_search is not None
+                and now - self._last_screen_search < SCREEN_SEARCH_INTERVAL):
+            return False
+        self._last_screen_search = now
+        self._searched = screen.name
+        self.speaker.say("Looking for the menu.")
         try:
-            raw = pine.read8(screen.cursor)
+            shift = find_screen_shift(pine, screen)
+        except Exception:
+            shift = None
+        if shift is None:
+            note(f"menus: {screen.name} is up, but its own block was not found "
+                 "in the search band, so its options stay silent")
+            return False
+        self._shifts[screen.name] = shift
+        note(f"menus: {screen.name} moved by {shift:+#x}; "
+             "reading its cursor there")
+        return True
+
+    def _speak_subtitle(self, pine, now: float) -> None:
+        """Say the prose on screen, however it can be reached.
+
+        Two sources, in the order of how much each claims to know.  A mapped
+        screen has recorded addresses, one per row, so there the line read is
+        the one belonging to the highlighted option and nothing else.
+        Everything else -- an unmapped screen, a screen whose block has moved,
+        a cutscene -- falls back to the pointer the game draws with, which
+        reads whatever is on screen and has not moved between runs.
+
+        Before this, F12 said "No subtitle available." on every screen without
+        a recorded table, which is most of them, and was not reached at all on
+        a screen the mod could not name, which is where the player most needs
+        it.
+        """
+        line = self._recorded_subtitle(pine, now)
+        if line is None:
+            line = self._displayed_prose(pine)
+        if line is None:
+            self.speaker.say("Nothing written on screen was found.")
+            return
+        # The story reader would otherwise announce the same line a moment
+        # later, on the screens where it is the one doing the reading.
+        if self._story is not None:
+            self._story.note_spoken(line)
+        self.speaker.say(line)
+
+    def _recorded_subtitle(self, pine, now: float) -> str | None:
+        screen = self.screen
+        if (screen is None or not screen.subtitles or not screen.readable
+                or not self.cursor_trusted):
+            return None
+        try:
+            raw = pine.read8(screen.cursor + self._shifts.get(screen.name, 0))
             address = screen.subtitles.get(raw // screen.stride)
         except Exception:
             address = None
         if address is None:
-            self.speaker.say("No subtitle available.")
-            return
-
+            return None
         line = self._read_line(pine, address)
-        if screen.context is not None:
-            about = self._read_line(pine, screen.context)
-            if about and line:
-                line = f"{about}. {line}"
-            elif about:
-                line = about
         if line is None:
             # The block has moved, which happens between emulator runs. Look
-            # for it once rather than leaving F12 dead for the whole session.
+            # for it once rather than leaving the recorded table dead for the
+            # whole session.
             line = self._relocate_and_read(pine, screen, address, now)
-        self.speaker.say(line or "No subtitle available.")
+        return line
+
+    def _displayed_prose(self, pine) -> str | None:
+        from .story import read_displayed
+        try:
+            return read_displayed(pine)
+        except Exception:
+            return None
 
     def _read_line(self, pine, address: int) -> str | None:
         try:
@@ -489,7 +785,9 @@ class MenuReader:
 
     def _relocate_and_read(self, pine, screen, address: int,
                            now: float) -> str | None:
-        if now - self._last_subtitle_search < SUBTITLE_SEARCH_INTERVAL:
+        if (self._last_subtitle_search is not None
+                and now - self._last_subtitle_search
+                < SUBTITLE_SEARCH_INTERVAL):
             return None
         self._last_subtitle_search = now
         # The search reads a few megabytes and takes a moment. Say so, because
@@ -508,6 +806,8 @@ class MenuReader:
     def suspend(self) -> None:
         """Forget the current screen so returning to it announces again."""
         self.screen = None
+        self.cursor_trusted = False
+        self._searched = None
         self._spoken = self._settled = self._pending = None
         self._unknown_since = None
         self._announced_unknown = False

@@ -828,24 +828,38 @@ def check() -> int:
     with this.  Run it whenever a screen is silent or wrong.
     """
     from bt2 import vision
-    from bt2.menus import SCREENS, MenuReader
+    from bt2.menus import SCREENS, MenuReader, find_screen_shift
 
     client = PineClient(timeout=10.0)
     try:
         print("marker matches, in the order detection considers them:")
         for screen in SCREENS:
             try:
-                hit = "MATCH" if screen.present(client) else "."
+                near = "MATCH" if screen.primary.present(client) else "."
             except Exception as error:
-                hit = f"error: {error}"
+                near = f"error: {error}"
+            try:
+                far = ("MATCH" if screen.alternate is not None
+                       and screen.alternate.present(client) else ".")
+            except Exception as error:
+                far = f"error: {error}"
             note = "  (raw signature, weak)" if screen.weak_marker else ""
             note += "  (flagged as inside Adventure)" if screen.in_adventure else ""
-            print(f"  {screen.name:<16} {hit}{note}")
+            second = "" if screen.alternate is None else f"   second signature {far}"
+            print(f"  {screen.name:<16} {near}{second}{note}")
+        print("  A screen matched only by its second signature is up, but its")
+        print("  own block has moved, so its cursor is not read until found.")
 
         reader = MenuReader(_Quiet())
-        found = reader._detect(client)
+        found, trusted = reader._detect(client)
         print(f"\ndetected: {found.name if found else 'none -- would say Unknown screen'}")
-        if found is not None and found.readable:
+        if found is not None and not trusted:
+            shift = find_screen_shift(client, found)
+            if shift is None:
+                print("  its own block was NOT found in the search band")
+            else:
+                print(f"  its own block has moved by {shift:+#x}")
+        if found is not None and found.readable and trusted:
             raw, label, settled = found.option(client)
             print(f"cursor:   raw {raw} -> {label!r}" +
                   ("" if settled else "   MIRRORS DISAGREE, would stay silent"))
@@ -853,7 +867,8 @@ def check() -> int:
                 print(f"mirror:   {client.read8(found.mirror)} "
                       f"at 0x{found.mirror:08X} (stride {found.mirror_stride})")
         elif found is not None:
-            print("cursor:   not mapped for this screen; it names itself only")
+            print("cursor:   not read -- either this screen only names itself,")
+            print("          or its own block moved and was not found")
 
         image = vision.capture_game_window()
         hud = vision.has_dragon_adventure_hud(image)

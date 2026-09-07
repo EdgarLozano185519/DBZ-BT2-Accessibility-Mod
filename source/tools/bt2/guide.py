@@ -1484,12 +1484,15 @@ f"{surface.describe()}."
         mapcal = MapCalibration(self.speaker)
         # Menus are read only while navigation guidance is suspended, so the two
         # can never talk over one another.
-        from .menus import MenuReader
-        menus = MenuReader(self.speaker)
+        #
         # Story prose is read in the same place and for the same reason: it is
         # the one point in the loop where navigation guidance is not speaking.
+        # The menu reader is given the story reader so that a line read out on
+        # F12 is not then repeated automatically a moment later.
+        from .menus import MenuReader
         from .story import StoryReader
         story = StoryReader(self.speaker)
+        menus = MenuReader(self.speaker, story=story)
         if hotkeys.controller_name:
             self.speaker.say(f"Teleport: T key or L1 on {hotkeys.controller_name}.")
         else:
@@ -1568,14 +1571,16 @@ f"{surface.describe()}."
                         # Cutscenes land here too: they are not the world map,
                         # so the scene gate holds guidance off through them.
                         #
-                        # Only where the menu reader does not know the screen.
-                        # On a mapped menu the same pointer aims at that
-                        # screen's subtitle, and reading it here would announce
-                        # every subtitle automatically -- which is exactly what
-                        # F12 was made a key press to avoid, because it slows
-                        # browsing to a crawl. An unknown screen is where a
-                        # cutscene lives.
-                        if menus.screen is None:
+                        # The menu reader speaks first and decides whether the
+                        # story reader speaks at all. On a menu whose cursor it
+                        # can read, the pointer aims at that menu's own
+                        # subtitle, so letting both run announced a subtitle
+                        # for every option the player browsed past and never
+                        # named the option -- which is what the player reported
+                        # after the story reader shipped. Where the menu reader
+                        # has no option to give, the prose is all there is, and
+                        # reading it is better than silence.
+                        if not menus.reads_options():
                             story.poll(self.pine, time.monotonic())
                         if wants_direction:
                             self.speaker.say(

@@ -94,6 +94,63 @@ restart. The Options marker has now been seen in two separate PCSX2 runs, on
 four visits. Dragon Library still rests on a **single visit**; its address could
 shift and has not been re-verified.
 
+### A screen can be recognised twice over, and the two are not equal
+
+Added 2026-09-07, after the main menu stopped being recognised in play.
+
+`0x00AA15EC` sits in the same allocation as the main menu's cursor, so matching
+it says two things at once: the screen is up, *and* the cursor is at
+`0x00AA12A8`. Only a marker in the cursor's own block can say the second thing.
+
+The main menu also writes its sprite names into a per-screen table on a `0xC0`
+granule at `0x00CF9800`, and **that block outlives the other one** -- on the
+Dragon Library capture `mc_menu_lineanime` is gone from `0x00AA15EC` and still
+present at `0x00CF9B00`. Five entries there are unique to the main menu across
+all 21 captures on disk:
+
+    0x00CF9D40  mc_yaji_down
+    0x00CF9E00  mc_yaji_up
+    0x00CFA040  mc_menu_off_down1
+    0x00CFA100  mc_menu_off_up1
+    0x00CFA1C0  mc_yaji
+
+Three names in the same table are **not** unique -- `mc_menu_lineanime`,
+`mc_menuicon_onanime` and `mc_menutext_onanime` are present on Dragon Library
+and Options too -- so no single name there would do. All five are demanded
+together, which is the same argument the subtitle search makes: a coincidence
+would have to reproduce the whole layout, not one string.
+
+**What each signature is allowed to conclude** is the point of separating them.
+The far signature names the screen. It never licenses a cursor read, because it
+says nothing about where the cursor is, and naming an option from a byte in a
+block that may have been freed is exactly the confident error this project
+treats as worse than silence.
+
+**When only the far signature matches, the near block is looked for.**
+`find_screen_shift` searches `0x00A00000`-`0x00B00000` for `mc_menu_lineanim`
+and requires **exactly one** hit; the name occurs three times in the 31 MB of a
+capture (`0x008CC3AB`, `0x00AA15EC`, `0x00CF9B00`), which is why the band is a
+megabyte rather than all of RAM. The whole signature is re-checked at the
+resulting shift, so a lone accidental hit still fails. Rate limited to once
+every 20 seconds and announced as "Looking for the menu.", for the same reason
+the subtitle search is announced.
+
+Checked offline against all 21 captures in `test_menus.py`: the search returns
+0 on both main-menu captures, `None` on the other 19, and finds a synthetic
+`0x2000` displacement of the whole band.
+
+**Why this was built.** In the three logged sessions where the main menu was
+announced, it had been reached from the title screen. In the sessions after
+Dragon Adventure had been entered it was never announced again, and the guide
+said "Unknown screen" there instead -- so the story reader, which speaks
+wherever the menu reader cannot, read out the subtitle of every option the
+player browsed past. Which of the two possible causes it was could not be
+settled from a capture, because there is no capture of the main menu taken
+after Dragon Adventure. Both are now handled: a block that moved is found
+again, and a **second named marker matching at once** is written to the log by
+`bt2.speech.note`, naming the screens that collided. The next occurrence
+diagnoses itself.
+
 ## Title screen: New Game / Load Game
 
 - `0x00533A73` (byte) -- **cursor index x 2**. `0` = New Game, `2` = Load Game.
@@ -110,7 +167,15 @@ returning a stale frame.
 ## Main Menu: ten options
 
 - `0x00AA12A8` (byte) -- **cursor index, 0 to 9**, plain, no stride. Mirrored at
-  `0x00CF9C34`.
+  `0x00CF9C34`, and **both are now read and must agree**, as on Options and Game
+  Level. The mirror lives in the per-screen sprite-name block described above,
+  which is a different allocation, so a block that drifts takes only its own
+  copy with it. Both read 8 on both main-menu captures. The mirror also keeps
+  the last main-menu selection after the screen is left -- 9 on the Dragon
+  Library capture, 8 on the Options one, which are the rows those screens were
+  opened from -- which is three distinct values across four captures and
+  corroborates what it means. It is read only once the screen has been
+  identified, so its persistence costs nothing.
 
 - `0` Dragon Adventure (the story mode)
 - `1` Ultimate Battle Z
@@ -189,11 +254,18 @@ hard**, so neither does the mod.
 
 Two lines of real text sit alongside, identical in all six captures:
 
-- `0x00D1A782` -- **not the current event name.** See below.
+- `0x00D1A782` -- **not the current event name.** See below. **No longer read.**
 - `0x00D179C2` -- "Set the Match level to your strength. You can always adjust
   it later!"
 
-Both are read on **F12**, not spoken automatically.
+The instruction line is read on **F12**, not spoken automatically.
+
+**The event name was removed from F12 on 2026-09-07**, when the player asked
+for F12 to be fixed. It announced the first event's name on every event, so
+dropping it loses nothing that was ever true, and the instruction line -- the
+part that was true -- is still read, now through the display pointer rather
+than this table. The address stays documented here because finding the
+current-event index is still worth doing; what is gone is speaking it.
 
 **`0x00D1A782` is entry 0 of a table, not a display slot.** It was recorded as
 "the event name" from captures taken on event 00, where the two are
@@ -209,10 +281,11 @@ beginning
 and it reads "Mysterious Alien Warrior" **on the Select Scenario screen too**,
 where no event name is displayed at all. So F12 does not report the current
 event; it reports the first one, always. This is the confident error the
-project treats as worse than silence, and it is live in the shipped build.
+project treats as worse than silence, and it shipped in the 2026-09-07 build.
 
-Fixing it needs the index of the current event, which is not yet known -- the
-story event list, still unmapped, is the obvious place to look for it.
+**It is no longer spoken.** Reading it correctly needs the index of the current
+event, which is still not known -- the story event list, still unmapped, is the
+obvious place to look for it. Until then F12 says the instruction line only.
 
 **The table is not regular, and `0x00D1A782 + 0x40 * n` is the wrong fix.**
 Walking it (`python story_probe.py names`) gives 230 entries in 240 granules,
@@ -375,6 +448,28 @@ Note these menu lines are **not** among the 2,601 `TXT-US-*` story strings --
 zero matches. The game has at least two separate text sets, so reading RAM
 covers text the offline extraction misses entirely.
 
+### F12 no longer depends on any of that succeeding
+
+Changed 2026-09-07. The recorded table is still tried first, because on a mapped
+screen it reads the line belonging to the *highlighted row* and nothing else.
+When it has nothing to give, F12 falls back to `0x008C6244`, the pointer the
+game draws with, which reads whatever prose is on screen.
+
+That covers three cases the recorded table never could: a screen with no table
+of its own, which is most of them; a screen whose block has moved; and a screen
+the mod cannot even name.
+
+**And F12 is now read on every pass.** It used to be polled below the point
+where an unrecognised screen returned early, so on any screen the mod could not
+name -- which is every screen it has not been taught, and, in the sessions that
+prompted this, the main menu -- pressing F12 did nothing whatever, not even say
+so. It answers everywhere now, and where there is genuinely nothing to read it
+says "Nothing written on screen was found." rather than staying silent.
+
+Covered offline in `test_menus.py` against the Main Menu, Options, Dragon
+Library, Game Level, Select Scenario and cutscene captures, with the expected
+line read off the screenshot saved beside each one.
+
 ## Story text: the disc format, and what is resident
 
 **The disc format is fully decoded.** `extract_text.py` used to pull strings out
@@ -527,6 +622,33 @@ way out of a cutscene. Two guards, both already proven elsewhere in this
 project: refuse anything that does not decode as clean text, and read only when
 the screen state says prose is up. The first is in `read_displayed` now; the
 second is not written yet and is what still stands between this and shipping.
+
+### Which reader speaks: the menu option always wins
+
+Rewritten 2026-09-07, after the player reported that menus had stopped reading
+their options and were reading the option subtitles instead.
+
+The menu reader and the story reader are looking at the same words. On a menu,
+the prose `0x008C6244` points at *is* that menu's own subtitle -- the pointer
+was verified against six menu captures precisely because it reads them. So both
+running at once means every option the player browses past is announced as a
+sentence of flavour text, and never as its name.
+
+The rule is one method, `MenuReader.reads_options()`:
+
+> The story reader speaks only where the menu reader has no option to give.
+
+It has an option to give when it has named the screen, that screen has a mapped
+cursor, **and** the evidence that named it also locates that cursor. All three
+matter. The gate used to be `menus.screen is None`, which fails the third:
+a screen recognised from a block that has since moved is named but unreadable,
+and the old test would have silenced the story reader while announcing nothing.
+
+Where it is false there is nothing to prefer -- a cutscene, an unmapped menu,
+Dragon Library, a screen the mod cannot name -- and the prose is then the best
+information available, so it is read. That is a small gain in itself: Dragon
+Library and any unmapped menu now describe themselves as the player browses,
+where before they were silent.
 
 Two byte-sized candidates found first, `0x00FFB1C4` and `0x003B29BC`, matched
 the box sequence across all eight captures and were the only two bytes in 31 MB
@@ -918,6 +1040,17 @@ Level was added, and each cost a bug that only a live run revealed.
    restart if the address sits in the dynamic region.
 7. **Say only what the screen says.** Game Level shows digits and never the
    words easy, normal or hard, so the mod says "Level 1".
+8. **Add it to `test_menus.py`.** One line in `CAPTURES` naming what the
+   screenshot shows, and the suite then insists that every screen's marker
+   matches its own captures and no other -- in both directions, which is step 3
+   done automatically for every screen added afterwards. If the screen has
+   prose, add its line to `PROSE` as well and F12 is covered too.
+9. **Ask what happens when the screen's block moves.** Menu blocks in the
+   dynamic region are rebuilt, and a marker there answers for one allocation
+   only. A screen with a second signature elsewhere keeps its name; a screen
+   without one goes to "Unknown screen", where the story reader takes over and
+   reads its subtitles instead of its options. That is not hypothetical -- it
+   is what the main menu did, in play, on 2026-09-07.
 
 ## Dead ends -- do not re-tread
 
@@ -1044,9 +1177,15 @@ interpretable.
 - Dragon Library and every other submenu need cursor addresses.
 - The Game Level cursor has not been checked across leaving the screen and
   coming back.
-- **F12 reports the wrong event name on every event but the first**, because
-  `0x00D1A782` is a table base rather than a display slot. See the Game Level
-  section. Live in the shipped build.
+- The current-event index is still unknown, so the **event name cannot be read
+  at all**. F12 used to announce the first event's name on every event, which
+  was worse; that is gone. `0x00D1A782` is a table base rather than a display
+  slot -- see the Game Level section.
+- **The main menu has never been captured after Dragon Adventure**, which is
+  the state it stopped being recognised in. The relocation search and the
+  ambiguity log line cover both explanations, but neither has been confirmed
+  as the cause. If it happens again, `snap` the main menu at that moment: one
+  capture settles it.
 - Other screens may also be misread as gameplay by the HUD detector, or shadow
   one another the way Title shadowed Game Level. Only the screens with captures
   on disk have been checked, and each new screen needs the same two questions
