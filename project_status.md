@@ -165,6 +165,15 @@ rather than behind.
 
 ### Also worth doing
 
+- **Teach the map scale by teleporting rather than flying.** This is now the
+  main blocker for story progress. The story objective is only a minimap
+  marker, converting it to world coordinates needs a scale learned from
+  movement, and the player cannot fly. Teleport is movement the guide controls,
+  so a few short teleports in known directions should teach it. Saved per map
+  profile, so once per map. Until then the player reaches story events by
+  teleporting to each table point in turn and trying the action button, which
+  works and which they are content with.
+
 - **The pause requirement is the remaining friction in teleport.** It is a real
   safety property -- PINE writes race the emulator's CPU thread -- but it means
   the one feature that does not need sight still needs the player to pause

@@ -338,6 +338,62 @@ The general lesson: **anything the player decided should be stored, not
 re-derived from state that the guide rebuilds.** Re-deriving turns a transient
 gap in perception into a silent change of intent.
 
+## Hotkeys must be read before the loop gives up
+
+Twice now the same fault has appeared with a different key. The loop abandons a
+pass whenever the story objective has not resolved:
+
+    if state.objective is None: continue
+    if not state.objective.has_direction: continue
+
+Anything read *after* those lines is silently discarded in exactly the
+situations the player most needs it. G was read there, and worked only
+sometimes. The destination keys were read there too, so on a fresh map --
+where no objective has resolved yet -- N and B did nothing at all, with no
+error and no sound.
+
+Choosing where to go, and asking how far away it is, do not depend on the
+objective being ready. Both are now read at the top of the pass, and every
+branch that gives up early answers rather than staying silent.
+
+**When adding a key, ask what it needs.** If it does not need the objective, it
+must not be read behind the objective's guards.
+
+## The story objective is a screen object, not a table entry
+
+On the world map the guide follows the red minimap marker directly, and
+`survey_map` deliberately leaves `state.available` empty:
+
+    # Kept empty deliberately: available destinations are screen objects,
+    # not table locations.
+
+So N and B cycle the coordinate table, which is a *different* set from the
+markers -- 8 table points against 6 markers in one observed frame. The red
+story marker has no table entry, which is why cycling never announces a story
+event, and why "press N until you hear Story" was wrong advice.
+
+Converting the red marker to a world coordinate needs the minimap-to-world
+scale, learned by watching the player fly. **A player who cannot see the screen
+cannot fly**, so that route is closed to the very user this mod exists for.
+
+**A one-frame fit from markers to table points does not work.** Tried: solve a
+per-axis scale and offset by matching the yellow markers against the table.
+The best fit matched 4 of 5 markers but produced a negative x scale, against
+the documented "increasing X moves right", and failed its own held-out check --
+the player's own position, never used in the fit, predicted a screen position
+98 px from any arrow. The code's existing warning that pairing the census back
+to the table caused wrong-route fallbacks is well founded.
+
+**What works today:** the story event has been reached by teleporting to table
+points one at a time and trying the action button at each. Crude, but it needs
+no flying, and the player reports it as acceptable.
+
+**The unexplored idea:** teleport *is* movement. The calibrator learns from
+pairs of world delta and screen delta and does not care how the player moved,
+so a few short teleports in different directions could teach it the scale
+without flying. The Jacobian is saved per map profile, so it would be a
+one-time cost per map.
+
 ## Why the hotkeys were unreliable
 
 Worth recording, because the symptom -- "the key works sometimes" -- sent two

@@ -872,6 +872,10 @@ f"Back from {label}. S story, F free, U nothing?"
             return
 
         if not surface.locations:
+            self.speaker.say(
+                "No destinations found on this map yet. Keep the world map in "
+                "view for a moment while they are located."
+            )
             return
         current = self.selected_location(surface, player)
         if action == "next":
@@ -1401,6 +1405,11 @@ f"{surface.describe()}."
                 # to be read on one branch only, so a press while the scene was
                 # not ready simply vanished.
                 wants_direction = direction_key.pressed()
+                # Read here for the same reason: the destination keys used to
+                # be read below the point where the loop gives up when no story
+                # objective has resolved. On a fresh map, where none has, N and
+                # B did nothing at all.
+                pending_action = destinations.poll()
                 try:
                     # One frame per iteration, shared by the HUD cross-check
                     # below, arrow calibration, and objective matching.
@@ -1421,10 +1430,10 @@ f"{surface.describe()}."
                         # Outside Adventure the player is usually in a menu, and
                         # this is the only point where nothing else is speaking.
                         menus.poll(self.pine, time.monotonic())
-                        if wants_direction:
+                        if wants_direction or pending_action in ("next", "previous"):
                             self.speaker.say(
-                                "Not flying just now, so there is no heading "
-                                "to give."
+                                "Not on the world map just now, so there are "
+                                "no destinations to choose."
                             )
                         time.sleep(0.15)
                         continue
@@ -1443,6 +1452,13 @@ f"{surface.describe()}."
                     state.memory_ready = True
                     if wants_direction:
                         self.announce_direction(observed, player)
+                    if pending_action in ("next", "previous"):
+                        # Choosing somewhere to go needs nothing but the map
+                        # and where the player is, so it is answered here
+                        # rather than waiting for an objective that may never
+                        # arrive.
+                        self.cycle_destination(observed, player, pending_action)
+                        pending_action = None
                 except MapNotReady:
                     state.memory_ready = False
                     fallback_analysis = self.analyze(captured)
@@ -1456,6 +1472,11 @@ f"{surface.describe()}."
                         # teleport without interrupting that route.
                         observed = vision_world_surface()
                         player = None
+                        if pending_action in ("next", "previous"):
+                            self.speaker.say(
+                                "The map's destinations are not readable yet. "
+                                "Keep the world map in view for a moment."
+                            )
                         if wants_direction:
                             # Honest about why, rather than silent: without a
                             # coordinate table there is no position to measure
@@ -1791,7 +1812,7 @@ f"{observed.display_name} calibrated."
                 if player is not None:
                     self.track_visit(observed, player)
 
-                action = destinations.poll()
+                action = pending_action
                 if action in ("free", "story", "none"):
                     if not self.classify_visit(observed, action, player):
                         self.speaker.say("Nothing to record.")
