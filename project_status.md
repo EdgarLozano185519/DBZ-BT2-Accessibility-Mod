@@ -204,6 +204,18 @@ should be re-offered rather than assumed blocked.
 
 Check the whole chain with `python pine_check.py`.
 
+**Every session the player plays leaves a transcript**, in
+`%LOCALAPPDATA%\DBZ BT2 Guide\logs\desktop-<timestamp>.log`. It holds every
+line the guide spoke, in order, plus anything the worker printed without
+speaking. That is the closest thing to a recording of a play session, it
+needs nothing set up in advance, and it is the first place to look when the
+player reports something. The 2026-09-07 menu fault was diagnosed from it
+entirely: the logs show "Main Menu" announced only in sessions that reached
+it from the title screen, never in one that had been inside Dragon Adventure,
+and they show that F12 had never produced a single line in any session.
+`bt2.speech.note` writes to it without speaking, which is where screen
+detection now records why it stayed silent.
+
 **Two things about running the guide from a terminal**, both learned the hard
 way on 2026-09-07 and both cheap to trip over again:
 
