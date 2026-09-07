@@ -3,7 +3,94 @@
 from __future__ import annotations
 
 import ctypes
+import threading
 import os
+
+
+class KeyWatcher:
+    """Samples keys on its own thread so a tap is never missed.
+
+    Two things had to be true at once for this to be necessary, and both are.
+
+    The guide loop runs about **four times a second** -- each pass captures and
+    analyses a frame -- and a key tap lasts about a tenth of a second. Measured
+    against the live loop, a 100 ms tap fell between polls on 83 of 83 gaps, so
+    testing whether the key is down *right now* misses nearly every press.
+
+    The obvious repair is GetAsyncKeyState's low bit, which latches "went down
+    since the previous call". It cannot be relied on here: Windows documents
+    that another process calling GetAsyncKeyState receives that bit instead,
+    and PCSX2 polls the keyboard constantly. Measured over two identical runs
+    of the real loop, the same three synthesised taps were seen twice, then not
+    at all. A hotkey that works on a coin toss is worse than one that does not
+    work, because the player cannot tell which they have.
+
+    So the physical state is sampled far faster than a person can tap, on a
+    thread of its own, and presses are counted for the loop to collect when it
+    gets round to it.
+
+    Focus is deliberately *not* checked here. Enumerating windows sixty times a
+    second is wasteful, and the loop already drains presses while the player is
+    reading with their screen reader.
+    """
+
+    INTERVAL = 0.015
+
+    def __init__(self, keys) -> None:
+        self._user32 = ctypes.WinDLL("user32", use_last_error=True)
+        self._user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
+        self._user32.GetAsyncKeyState.restype = ctypes.c_short
+        self._keys = tuple(keys)
+        self._pending = {key: 0 for key in self._keys}
+        self._down = {key: False for key in self._keys}
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            for key in self._keys:
+                down = bool(self._user32.GetAsyncKeyState(key) & 0x8000)
+                if down and not self._down[key]:
+                    with self._lock:
+                        # Counted, not flagged: two quick presses are two
+                        # questions, and the player should get two answers.
+                        self._pending[key] = min(self._pending[key] + 1, 3)
+                self._down[key] = down
+            self._stop.wait(self.INTERVAL)
+
+    def take(self, key: int) -> bool:
+        """Collect one press, if any is waiting."""
+        with self._lock:
+            if self._pending.get(key, 0) > 0:
+                self._pending[key] -= 1
+                return True
+        return False
+
+    def drain(self) -> None:
+        """Forget everything pending, for when the player was not playing."""
+        with self._lock:
+            for key in self._keys:
+                self._pending[key] = 0
+
+    def close(self) -> None:
+        self._stop.set()
+
+
+_WATCHER = None
+_WATCHER_LOCK = threading.Lock()
+
+# Every key the guide reads. One thread serves all of them.
+WATCHED_KEYS = (0x54, 0x4E, 0x42, 0x52, 0x46, 0x53, 0x55, 0x47)
+
+
+def shared_watcher() -> KeyWatcher:
+    global _WATCHER
+    with _WATCHER_LOCK:
+        if _WATCHER is None:
+            _WATCHER = KeyWatcher(WATCHED_KEYS)
+        return _WATCHER
 
 
 def desktop_input_allowed(user32) -> bool:
@@ -26,7 +113,7 @@ class TeleportHotkeys:
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
         self._user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
         self._user32.GetAsyncKeyState.restype = ctypes.c_short
-        self._keyboard_down = False
+        self._watcher = shared_watcher()
         self._l1_down = False
         self._controller = None
         self.controller_name = None
@@ -60,10 +147,10 @@ class TeleportHotkeys:
         return None
 
     def poll(self) -> str | None:
-        key_state = self._user32.GetAsyncKeyState(self.VK_T) & 0xFFFF
-        keyboard_down = bool(key_state & 0x8000)
-        keyboard_pressed = keyboard_down and not self._keyboard_down
-        self._keyboard_down = keyboard_down
+        # Same latch as the other keys: a tap between polls used to be lost,
+        # so T worked only when held. The latch fires on a real press only, so
+        # this cannot invent a teleport that the player did not ask for.
+        keyboard_pressed = self._watcher.take(self.VK_T)
 
         controller_pressed = False
         if self._controller is not None:
@@ -120,14 +207,10 @@ class DestinationHotkeys:
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
         self._user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
         self._user32.GetAsyncKeyState.restype = ctypes.c_short
-        self._down: dict[int, bool] = {}
+        self._watcher = shared_watcher()
 
     def _pressed(self, key: int) -> bool:
-        state = self._user32.GetAsyncKeyState(key) & 0xFFFF
-        down = bool(state & 0x8000)
-        was = self._down.get(key, False)
-        self._down[key] = down
-        return down and not was
+        return self._watcher.take(key)
 
     def poll(self) -> str | None:
         if not desktop_input_allowed(self._user32):
@@ -168,13 +251,10 @@ class DirectionHotkey:
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
         self._user32.GetAsyncKeyState.argtypes = (ctypes.c_int,)
         self._user32.GetAsyncKeyState.restype = ctypes.c_short
-        self._down = False
+        self._watcher = shared_watcher()
 
     def pressed(self) -> bool:
-        state = self._user32.GetAsyncKeyState(self.VK_G) & 0xFFFF
-        down = bool(state & 0x8000)
-        fired = down and not self._down
-        self._down = down
+        fired = self._watcher.take(self.VK_G)
         # Drain the edge while the player is reading with their screen reader,
         # so returning to the game does not fire a stale press.
         return fired and desktop_input_allowed(self._user32)

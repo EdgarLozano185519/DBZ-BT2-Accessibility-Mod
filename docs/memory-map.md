@@ -312,6 +312,37 @@ Whether this is the character's facing or the chase camera's cannot be told
 apart while flying, and does not matter: the two are locked together, and it is
 the frame the controls operate in either way.
 
+## Why the hotkeys were unreliable
+
+Worth recording, because the symptom -- "the key works sometimes" -- sent two
+rounds of fixes to the wrong place.
+
+**The loop is far slower than a key press.** Each pass captures and analyses a
+frame, so it runs about **four times a second**: measured against the live loop,
+a median gap of 204 ms. A key tap lasts around 100 ms, so a press that starts
+and ends between two polls never existed as far as the guide is concerned. A
+100 ms tap fell inside a gap on **83 of 83 gaps**.
+
+**GetAsyncKeyState's "pressed since last call" bit cannot fix it here.** That
+low bit is exactly for slow polling, but Windows documents that another process
+calling GetAsyncKeyState receives the bit instead -- and PCSX2 polls the
+keyboard constantly. Two identical runs of the real loop with the same three
+synthesised taps saw two, then none. A hotkey that works on a coin toss is
+worse than one that plainly does not, because the player cannot tell which they
+have.
+
+**So keys are sampled on their own thread.** `hotkeys.KeyWatcher` reads the
+physical state every 15 ms and counts presses; the loop collects them when it
+gets round to it. Presses are counted rather than flagged, so two quick taps
+are two questions and get two answers. Focus is deliberately not checked in
+that thread -- enumerating windows sixty times a second is wasteful, and the
+loop already drains the queue while the player is reading with their screen
+reader. All the guide's keys share one thread and one watcher.
+
+**Do not diagnose this class of fault by reasoning.** `menu_probe.py keys`
+measures it: whether presses are seen, whether the game had focus, and how
+often the loop actually looks.
+
 ## Adding a screen: the checklist
 
 In the order that avoids wasted sessions. Steps 3 and 5 were skipped when Game

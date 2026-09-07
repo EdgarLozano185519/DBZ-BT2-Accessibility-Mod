@@ -39,6 +39,7 @@ from .hotkeys import (
     DirectionHotkey,
     TeleportHotkeys,
     desktop_input_allowed,
+    shared_watcher,
 )
 from .memory import (
     LOCAL_ENTITY_RADIUS,
@@ -333,9 +334,15 @@ class Guide:
                 try:
                     # The minimap marker converted into world coordinates, so
                     # the distance is in the same units as everything else.
-                    return self._screen_location(observed, player, objective)
+                    projected = self._screen_location(observed, player, objective)
                 except Exception:
-                    return None
+                    projected = None
+                if projected is not None:
+                    return projected
+                # Projecting needs the minimap-to-world scale, which is not
+                # learned until the player has flown a little. Falling back to
+                # the destination list answers the question anyway, rather than
+                # claiming there is nothing to report when there are six.
         return self.selected_location(observed, player)
 
     def announce_direction(self, observed, player) -> None:
@@ -1359,14 +1366,20 @@ f"{surface.describe()}."
                             # The player is reading with their screen reader,
                             # not playing. Re-announce when they come back.
                             menus.suspend()
-                        hotkeys.poll()
-                        destinations.poll()
+                        # Forget everything queued: the player was reading,
+                        # not playing, and a press from then must not fire on
+                        # their return.
+                        shared_watcher().drain()
                         if stop_event is not None:
                             stop_event.wait(.15)
                         else:
                             time.sleep(.15)
                         continue
                     desktop_suspended = False
+                # Read once per pass and answered on every path below. It used
+                # to be read on one branch only, so a press while the scene was
+                # not ready simply vanished.
+                wants_direction = direction_key.pressed()
                 try:
                     # One frame per iteration, shared by the HUD cross-check
                     # below, arrow calibration, and objective matching.
@@ -1387,6 +1400,11 @@ f"{surface.describe()}."
                         # Outside Adventure the player is usually in a menu, and
                         # this is the only point where nothing else is speaking.
                         menus.poll(self.pine, time.monotonic())
+                        if wants_direction:
+                            self.speaker.say(
+                                "Not flying just now, so there is no heading "
+                                "to give."
+                            )
                         time.sleep(0.15)
                         continue
                     menus.suspend()
@@ -1402,7 +1420,7 @@ f"{surface.describe()}."
                     player = self.pine.read_vector3_many((observed.player_address,))[0]
                     observed = self.augment_local(observed, player)
                     state.memory_ready = True
-                    if direction_key.pressed():
+                    if wants_direction:
                         self.announce_direction(observed, player)
                 except MapNotReady:
                     state.memory_ready = False
@@ -1417,7 +1435,7 @@ f"{surface.describe()}."
                         # teleport without interrupting that route.
                         observed = vision_world_surface()
                         player = None
-                        if direction_key.pressed():
+                        if wants_direction:
                             # Honest about why, rather than silent: without a
                             # coordinate table there is no position to measure
                             # a distance or a heading from.
