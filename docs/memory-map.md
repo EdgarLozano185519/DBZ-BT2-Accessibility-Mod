@@ -312,6 +312,32 @@ Whether this is the character's facing or the chase camera's cannot be told
 apart while flying, and does not matter: the two are locked together, and it is
 the frame the controls operate in either way.
 
+## A chosen destination must be held, not looked up again
+
+The list of destinations is rebuilt from the minimap every frame. The player's
+choice used to be stored as an index into that list and resolved again on each
+use, and `selected_location` quietly fell back to the first entry when the
+index was not found:
+
+    for entry in available:
+        if entry.location.index == self.state.selected_index:
+            return entry.location
+    self.state.selected_index = available[0].location.index   # silent
+
+So a marker that dropped out of the inventory for a single frame moved the
+selection to the first destination without a word, and a teleport went
+somewhere the player never picked. Reproduced exactly: choose map point 4,
+remove its marker for one frame, and the old path returns map point 1.
+
+A decision is now held as the destination itself -- and the words it was
+announced with, so a teleport cannot rename it either. Coordinates do not go
+stale; only a change of map invalidates the choice, and `reset_surface` clears
+it there.
+
+The general lesson: **anything the player decided should be stored, not
+re-derived from state that the guide rebuilds.** Re-deriving turns a transient
+gap in perception into a silent change of intent.
+
 ## Why the hotkeys were unreliable
 
 Worth recording, because the symptom -- "the key works sometimes" -- sent two

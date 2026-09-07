@@ -138,6 +138,13 @@ class GuideState:
     # selected_index, which the guide sets for itself when it needs somewhere
     # to start from: only this means "the player chose this".
     destination_chosen: bool = False
+    # The destination itself, and the words it was announced with. Held rather
+    # than looked up again: the list of markers is rebuilt from the minimap
+    # every frame, and re-deriving a choice from it meant a marker that dropped
+    # out for one frame silently moved the selection to the first entry -- so a
+    # teleport could go somewhere the player never picked.
+    chosen_location: object | None = None
+    chosen_name: str | None = None
     pending_world_teleport: bool = False
     pending_pause_notice: bool = False
     blocked_identity: tuple | None = None
@@ -180,6 +187,10 @@ class GuideState:
     def reset_surface(self) -> None:
         self.surface = None
         self.objective = None
+        # A destination chosen on the previous map means nothing on this one.
+        self.destination_chosen = False
+        self.chosen_location = None
+        self.chosen_name = None
         self.active_identity = None
         self.ready_identity = None
         self.ready_count = 0
@@ -326,10 +337,8 @@ class Guide:
         no explicit pick, the thing the guide is steering to is the answer.
         """
         state = self.state
-        if state.destination_chosen:
-            chosen = self.selected_location(observed, player)
-            if chosen is not None:
-                return chosen
+        if state.destination_chosen and state.chosen_location is not None:
+            return state.chosen_location
         objective = state.objective
         if objective is not None:
             if objective.location is not None:
@@ -849,6 +858,10 @@ f"Back from {label}. S story, F free, U nothing?"
                 profile.point_names.get(entry.location.index)
                 or entry.location.label
             )
+            # Remember the decision, and the words it was given in, so that
+            # teleporting cannot land somewhere else or call it something else.
+            self.state.chosen_location = entry.location
+            self.state.chosen_name = name
             cue = cue_for(player, entry.location, name, entry.kind)
             self._reset_approach()
             self.speaker.say(
@@ -869,6 +882,9 @@ f"Back from {label}. S story, F free, U nothing?"
         profile = (MapProfile(surface.fingerprint) if surface.is_local else
                    self.store.map_profile(surface.fingerprint,len(surface.locations)))
         name = profile.point_names.get(chosen.index) or chosen.label
+        self.state.destination_chosen = True
+        self.state.chosen_location = chosen
+        self.state.chosen_name = name
         node_type = kind_from_profile(profile, chosen.index, surface.is_local)
         cue = cue_for(player, chosen, name, node_type)
         self._reset_approach()
@@ -1715,7 +1731,7 @@ f"{observed.display_name} calibrated."
                     # follow the minimap marker by a separate path, so choosing
                     # a destination changes where T goes without changing what
                     # is being flown toward.
-                    picked = self.selected_location(observed, player)
+                    picked = state.chosen_location
                     if picked is not None:
                         target = picked
 
@@ -1863,8 +1879,13 @@ f"{observed.display_name} calibrated."
                             note = "."
                         else:
                             note = ", the story marker."
+                        spoken = (
+                            state.chosen_name
+                            if state.destination_chosen and state.chosen_name
+                            else target.label
+                        )
                         self.speaker.say(
-                            f"{hotkey} teleport: moved to {target.label}{note}"
+                            f"{hotkey} teleport: moved to {spoken}{note}"
                         )
                         if not observed.is_local:
                             state.last_arrow = None
