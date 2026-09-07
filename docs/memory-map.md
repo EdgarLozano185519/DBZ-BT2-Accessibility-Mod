@@ -741,12 +741,18 @@ the arrangement the player asked for in both directions.
 **What it costs, and how that gets noticed.** A scene loaded outside the band
 would go unread. The band is therefore not narrowed to the two observed bases,
 and every refusal is written to the log with the address that caused it, once
-per megabyte -- so widening it is a measurement rather than a guess. **The open
-question is the save notice.** "MEMORY CARD slot 1" was spoken at the player's
-request, and where the game keeps it *while it is on screen* has never been
-captured; the string tables sit at `0x0093Cxxx`-`0x00C97xxx`, well below the
-band, so it is likely to have gone quiet. If it has, the log line names the
-address and the rule can be widened knowing exactly what it admits.
+per megabyte -- so widening it is a measurement rather than a guess.
+
+**Save notices go with the menus, and that is a decision rather than an
+oversight.** "MEMORY CARD slot 1" was spoken at the player's request, but it is
+not a scene box: the string tables sit at `0x0093Cxxx`-`0x00C97xxx`, well below
+the band, and where the game keeps one *while it is on screen* has never been
+captured. Put to the player on 2026-09-07 against the alternatives -- capture
+one and widen the rule by its real address, or drop the band and let menus talk
+again -- they chose to leave it and read a save notice on F12 like any other
+screen text. If a refused line ever appears in a log beside a save they
+expected to hear, its address is in that line and the rule can be widened
+knowing exactly what it would admit.
 
 Two byte-sized candidates found first, `0x00FFB1C4` and `0x003B29BC`, matched
 the box sequence across all eight captures and were the only two bytes in 31 MB

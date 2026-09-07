@@ -94,6 +94,13 @@ an unmapped menu is now silent while browsing.
 named or not. That is the whole arrangement: menus are read on request, the
 story is read as it happens.
 
+**Save notices go with the menus, and that is the player's decision**, taken
+2026-09-07 when the trade-off was put to them. "MEMORY CARD slot 1" is not a
+scene box and has probably stopped being announced; F12 reads it like any other
+screen text. Not a gap to close -- but if a refused line ever turns up in the
+log beside a save the player expected to hear, its address is right there and
+the rule can be widened by measurement.
+
 ## Releasing
 
 `python source/tools/build_release.py --release=YYYY.MM.DD-rN` stamps
@@ -258,30 +265,18 @@ Deleting them would remove a moving part and the "Looking for the subtitles."
 pause. It would also be a change to something that works, so it is still the
 player's call rather than the next session's.
 
-**3. Should a save notice still be spoken?** *This one is new and is the only
-open question from the 2026-09-07 changes.* Automatic narration is now
-restricted to the scene text buffer, which is what keeps unmapped menus quiet.
-"MEMORY CARD slot 1" is not a scene box, and where the game keeps it while it
-is on screen has never been captured -- the string tables sit well below the
-band -- so it has probably gone quiet with them. The player asked for those
-notices. Three ways out, in increasing cost: leave it, and read a save notice
-on F12 like any other screen text; capture one and widen the rule by its real
-address; or drop the band and accept menus talking again. **Nothing will change
-here until this is answered**, and the log now records the address of anything
-refused, so answering it later costs one play session rather than a probe.
-
-**4. Should a stray line be tolerated while the gate is unproven?** The
+**3. Should a stray line be tolerated while the gate is unproven?** The
 stale-pointer guard is judged, not proven -- see item 7. The scene-buffer rule
 above has incidentally made this much stricter: a stale pointer left aiming at
 menu text after a scene ends is now refused by address as well as by content.
 The remaining exposure is a stale pointer still inside the scene buffer.
 
-**5. Should this be stamped as a release?** The worker is rebuilt and deployed
+**4. Should this be stamped as a release?** The worker is rebuilt and deployed
 but `BUILD-INFO.json` and `SHA256SUMS.txt` still describe the previous build.
 Stamping is one command and is the player's call, not something to do because
 the code changed.
 
-**6. Should the 700 MB of captures be pruned?** `reference/probe` now holds
+**5. Should the 700 MB of captures be pruned?** `reference/probe` now holds
 `cut0`-`cut7` at 31 MB each. The archive rule is one capture per screen; five
 of the eight are distinct boxes and three are duplicates. Keeping them all
 until the stale-pointer gate is settled is deliberate -- they are the evidence.
