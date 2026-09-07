@@ -280,6 +280,36 @@ the corpus with `python extract_text.py`.
   "Unknown screen" there, which is the intended behaviour: naming a screen it
   cannot read would be worse than admitting it.
 
+## Adding a screen: the checklist
+
+In the order that avoids wasted sessions. Steps 3 and 5 were skipped when Game
+Level was added, and each cost a bug that only a live run revealed.
+
+1. **Photograph it.** `positionscan` saves a screenshot beside every capture,
+   and one picture settles the labels, the option count, and whether the menu is
+   vertical or horizontal. Game Level answers to Left and Right; a press scan
+   cueing "Down" would have captured three minutes of nothing.
+2. **Find a marker** among the sprite names in the dynamic region. Prefer a name
+   that means something -- `mc_da_5_lv_csr` is the level cursor -- over a byte
+   signature, which is far weaker evidence.
+3. **Check the marker against every other capture on disk, and every other
+   screen's marker against this one.** Markers are *not* automatically mutually
+   exclusive: the title screen's signature also matches on Game Level, and
+   because Title is checked first it announced "New Game" over a difficulty
+   chooser. `check` prints all of this.
+4. **Find the cursor**: `pressscan` for a wrapping menu driven by one repeated
+   key, `positionscan` plus `fit` otherwise. Expect two copies -- a plain count
+   in the screen's own allocation and a multiplied one in static memory. Wire
+   both and cross-check them; one address cannot tell a correct read from a
+   drifted one.
+5. **Ask whether the HUD heuristic calls this screen gameplay.** If it does and
+   the screen is not flagged `in_adventure`, menu reading is suspended and the
+   screen is silent with no error anywhere. `check` says so in as many words.
+6. **Verify on a transition you did not derive from**, then across an emulator
+   restart if the address sits in the dynamic region.
+7. **Say only what the screen says.** Game Level shows digits and never the
+   words easy, normal or hard, so the mod says "Level 1".
+
 ## Dead ends -- do not re-tread
 
 - **`0x00533FF0` and `0x00534030`** survived a five-snapshot search of the title
@@ -330,6 +360,24 @@ the corpus with `python extract_text.py`.
 - `labels ADDR` -- sweeps a menu and keeps a picture of each option, so the
   spoken table can be written from what was actually on screen. Cues each press
   rather than waiting to notice one.
+- `check` -- **run this first when a screen is silent or names itself wrongly.**
+  Prints which markers match, in the order detection considers them, what it
+  settled on, what the cursor and its mirror read, and whether the HUD
+  heuristic disagrees. Both faults found on Game Level were invisible from
+  outside the mod and obvious in one line of this.
+- `positionscan --screen=NAME --cues=Left,Right,Right` -- captures RAM and a
+  screenshot after each **named** key press. The press scan assumes a menu that
+  wraps and answers to one repeated key; this handles horizontal menus, menus
+  with few entries, and menus reached only from inside a story event.
+- `fit 2,1,2,3,2,1` -- given the positions **read back off those screenshots**,
+  finds addresses constant per position, different between positions, and small
+  enough to be an index. Read the positions off the pictures rather than
+  assuming the presses landed: one missed press poisons the correlation while
+  the run still looks clean. On Options this cut 39,101 raw matches to 67, of
+  which 5 were real.
+- `dryrun` -- runs the real guide loop with a recording speaker and prints every
+  line spoken. The mod's whole output is speech, which otherwise cannot be
+  checked without the player sitting at the controls.
 - `find` / `snap` -- manual snapshot and sequence search.
 - `watch ADDR...` -- poll addresses live to see which hold steady between
   presses.
@@ -346,8 +394,11 @@ A 31 MB snapshot takes 0.7 s over PINE with no ill effect on PCSX2. Note that
 `bt2/scan.py` warns that reading all of RAM starved the VM and correlated with
 hangs; that concerns continuous polling during play, not one-off diagnostics.
 
-Captures land in `reference/probe/`, which is git-ignored. Game memory must
-never be committed.
+`source/tools/extract_text.py` pulls the story corpus off the disc offline,
+with no emulator and no player involved. See the Dragon Adventure TODO above.
+
+Captures land in `reference/probe/` and extracted text in `reference/corpus/`,
+both git-ignored. Game memory and game text must never be committed.
 
 ## Known gaps
 

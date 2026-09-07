@@ -89,26 +89,59 @@ Check the whole chain with `python pine_check.py`.
 
 ## Next steps, roughly in order
 
-1. **Map the remaining screens.** Dragon Library is detected but its cursor and
-   labels are both unknown: one press scan, then a `labels` run. Ultimate
-   Battle Z and the rest are not detected at all, so each needs a **marker**
-   found first -- a separate capture and diff -- before a cursor is worth
-   looking for. The Options run is the worked example to follow.
-2. **Re-verify the Dragon Library marker.** It rests on a single visit, unlike
-   the main menu's and now Options'. A marker that shifts between visits would
-   make the announcer name the wrong screen. Cheap: visit it in two runs.
-3. **Dragon Adventure story subtitles.** The largest untouched win. Story text
-   is real UTF-16LE in `TXT-US-*` inside `ZS2US_1.AFS`, on-screen prose is
-   demonstrably readable from RAM, and the menu subtitles prove the subtitle
-   system works. The one open question is how to tell which line is currently
-   displayed, since a cutscene has no cursor. Needs one capture session inside a
-   cutscene -- see the TODO in `docs/memory-map.md` for the method.
-Smaller, optional:
+**When a screen is silent or names itself wrongly, run `python menu_probe.py
+check` before theorising.** Both faults found on Game Level were invisible from
+outside the mod and obvious in one line of that output, and both were reasoned
+about wrongly first.
+
+### 1. Verifications this session left owed
+
+All cheap, all need the player at the controls.
+
+- **Game Level, leave and return.** Press Triangle to go back, re-pick the
+  event, check it still tracks. Every cursor here is held to being tested on a
+  transition it was not derived from; this one has not been. If it goes silent
+  afterwards that is the two mirrors disagreeing, which is the design working.
+- **The event name on a second story event.** `0x00D1A782` has been seen for
+  event 00 only. **Blocked** -- see The save file, below. It stays on F12 until
+  then, which is why it is on F12.
+- **The Dragon Library marker, in a second run.** It rests on a single visit,
+  unlike the main menu's and Options'.
+
+### 2. Map the remaining screens
+
+- **The story event list**, inside Dragon Adventure -- the screen Game Level is
+  reached *through*, where the player is choosing blind. Almost certainly needs
+  `in_adventure=True` like Game Level, since the HUD heuristic will call it
+  gameplay too. Probably the highest value of the three.
+- **Dragon Library** -- detected, but cursor and labels both unknown.
+- **Ultimate Battle Z and the rest** -- not detected at all, so each needs a
+  marker found before a cursor is worth looking for.
+
+Follow **Adding a screen** in `docs/memory-map.md`; it is a checklist because
+this session skipped two of its steps and shipped two bugs.
+
+### 3. Dragon Adventure story subtitles
+
+The largest untouched win, and the groundwork is now in place: `extract_text.py`
+gives 2,458 distinct lines, which is the filter that makes the search
+tractable. The one open question is unchanged -- how to tell which line is
+*currently* displayed, since a cutscene has no cursor. Needs one capture session
+inside a cutscene; the method is in the TODO in `docs/memory-map.md`.
+
+Good timing: the save is at the very start, so the opening cutscenes are ahead
+rather than behind.
+
+### Smaller, optional
 
 - The standalone `menu_announcer.py` still says "Unknown screen" on every screen
-  transition. The shipped `bt2/menus.py` no longer does. The standalone is a
-  development tool, so this only matters if it is used for a long probing
-  session, where the interruptions are tiring.
+  transition, and does not have the mirror cross-check or the named-marker
+  precedence. The shipped `bt2/menus.py` has all three. It is a development
+  tool, so this matters only during a long probing session -- but it means it no
+  longer reflects how the mod behaves.
+- Nothing checks read text against the extracted corpus yet. Deliberate:
+  nothing reads story text yet either, and building the check first would be
+  building against nothing.
 
 ## Recently finished
 

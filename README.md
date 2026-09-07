@@ -49,13 +49,24 @@ reader normally without the guide talking over it.
 
 ## What it does today
 
-**Menus speak.** Moving the cursor announces the highlighted option on the title
-screen and the main menu. Screens it recognises but has not mapped are named and
-then stay quiet; screens it does not recognise say so, rather than guessing.
+**Menus speak.** Moving the cursor announces the highlighted option on:
 
-**F12 speaks the character's line.** Each main menu option has spoken dialogue
-with a subtitle, and F12 reads it. It is on a key press so that browsing stays
-quick.
+- the **title screen** — New Game, Load Game
+- the **main menu** — all ten options
+- **Options** — Save and Load, Controller, Screen, Sound, Exit
+- **Game Level**, the difficulty chooser reached after picking a story event in
+  Dragon Adventure — Level 1, 2 or 3, chosen with Left and Right
+
+Screens it recognises but has not mapped are named and then stay quiet; screens
+it does not recognise say so, rather than guessing. Where the game keeps two
+copies of the cursor, both are read, and if they ever disagree it stays silent
+rather than name the wrong option.
+
+**F12 speaks the game's own text.** On the main menu, the character's spoken
+line for the highlighted option. On Game Level, the name of the story event and
+the instruction line. It is on a key press so that browsing stays quick. If the
+text has moved since it was last recorded, F12 says "Looking for the subtitles",
+finds it again, and carries on.
 
 **Dragon Adventure navigation.** The original guidance: it picks an objective
 from the live minimap, tracks your position, and uses stereo direction and pitch
@@ -63,7 +74,7 @@ plus spoken messages to steer you there.
 
 With the game focused:
 
-- **F12** — the spoken line for the highlighted menu option
+- **F12** — the game's own text for the current screen
 - **R** — repeat the current destination
 - **N** / **B** — next / previous destination
 - **T** — request a teleport, then follow the spoken instructions
@@ -75,14 +86,19 @@ With the game focused:
 Being honest about the limits, because silence from a screen reader is
 indistinguishable from "working, nothing to say":
 
-- Only the **title screen and main menu** speak. Options, Dragon Library, the
-  item shop, character select and battle menus do not yet
+- **The story event list does not speak.** Choosing which story event to play
+  is still done blind, even though the difficulty screen after it now speaks
+- Dragon Library is named but its entries are not read. Ultimate Battle Z, the
+  item shop, character select and battle menus are not recognised at all
 - **Story cutscene subtitles are not read.** This is the largest missing piece
   and the next thing being worked on
 - **Battles are not accessible** beyond the game's own audio
-- Menu subtitle addresses were recorded in one PCSX2 session. If they no longer
-  match after an emulator restart, F12 says "no subtitle available" rather than
-  reading nonsense
+- The **event name** F12 reads on Game Level has only ever been checked against
+  one story event, because only one is unlocked on the current save. If it ever
+  reads a name that does not match the event you picked, that is why — please
+  report it
+- If text addresses no longer match, F12 says "no subtitle available" rather
+  than reading nonsense
 - Navigation is a playtest of Dragon Adventure, not whole-game accessibility.
   Unfamiliar maps still need wider testing
 
