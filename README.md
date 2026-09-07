@@ -231,10 +231,11 @@ folder — see *If something goes wrong*.
 Being honest about the limits, because silence from a screen reader is
 indistinguishable from "working, nothing to say":
 
-- **The story marker cannot be teleported to directly.** It exists only as a
-  marker drawn on the minimap, and turning that into a place needs a map scale
-  the guide learns by watching you fly. Hence the trial-and-error loop above.
-  Teaching it that scale by teleporting instead is the next planned change
+- **The story marker can only be teleported to on a map you have calibrated.**
+  It exists only as a marker drawn on the minimap, so turning it into a place
+  needs that map's scale — which is what **C** measures. Until you run C on a
+  map, the trial-and-error loop above is what works there. C has been run on
+  one map so far; whether it holds on every map is not yet known
 - **The story event list does not speak.** The scenario list before it now
   does, and the difficulty screen after it does, but choosing the individual
   event between them is still done blind

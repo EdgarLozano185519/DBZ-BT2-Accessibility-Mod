@@ -768,8 +768,9 @@ fix; `story_selected` marks it so T and G use the live marker rather than the
 frozen pick.
 
 Converting the red marker to a world coordinate needs the minimap-to-world
-scale, learned by watching the player fly. **A player who cannot see the screen
-cannot fly**, so that route was closed to the very user this mod exists for.
+scale. The original way to learn it was to watch the player fly, and **a player
+who cannot see the screen cannot fly**, so that route was closed to the very
+user this mod exists for. That is the problem the next section solves.
 
 **A one-frame fit from markers to table points does not work.** Tried: solve a
 per-axis scale and offset by matching the yellow markers against the table.
