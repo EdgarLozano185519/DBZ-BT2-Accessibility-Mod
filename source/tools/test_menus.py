@@ -2,13 +2,13 @@
 
 No emulator, no player.  The captures in `reference/probe` are real EE RAM with
 a screenshot beside each one, so which screen each of them *is* was read off a
-picture rather than out of the code under test.  Twenty-six of them, covering
+picture rather than out of the code under test.  Twenty-seven of them, covering
 six screens and a cutscene, which is enough to insist that every marker matches
 its own screen and no other -- in both directions, since a marker that matches
 a screen it does not belong to is how three separate faults reached the player.
 
 The scenario list gets the most attention here because it has cost the most.
-Twelve of the captures are of it, across three list lengths and several PCSX2
+Thirteen of the captures are of it, across four list lengths and several PCSX2
 sessions, and every one is checked against the row its screenshot shows.
 
 The synthetic cases cover what captures cannot: a screen whose own block has
@@ -51,6 +51,7 @@ CAPTURES = {
     "row2": "Select Scenario",
     "row3": "Select Scenario",
     "scen3_fb": "Select Scenario",
+    "scen5_final": "Select Scenario",
     "cut0": None, "cut1": None, "cut2": None, "cut3": None,
     "cut4": None, "cut5": None, "cut6": None, "cut7": None,
 }
@@ -540,6 +541,7 @@ SCENARIO_SHOTS = [
     ("scen3_fb", "Fateful Brothers"),
     ("row0", "Saiyan Saga"), ("row1", "Tree of Might"),
     ("row2", "Lord Slug"), ("row3", "Fateful Brothers"),
+    ("scen5_final", "Final Battle"),
 ]
 
 
@@ -587,27 +589,70 @@ def test_the_scenario_is_asked_for_by_name() -> None:
               scenario.scenario_ids(pine) == sorted(scenario.scenario_ids(pine)))
 
 
+def test_the_five_entry_list() -> None:
+    """The fifth scenario, against the game's own memory rather than a patch.
+
+    This is the case the design was built for, and it happened: Final Battle
+    unlocked as number 3, landed between Lord Slug and Fateful Brothers exactly
+    where the numbers say it must, and cost one row instead of five. The
+    capture is of the row the player was sitting on, so the other rows are
+    reached by moving the cursor within it -- the list itself is untouched.
+    """
+    print("\nThe five-entry list, from the capture of it:")
+    base = load("scen5_final")
+    if base is None:
+        check("scen5_final present", False, "capture missing")
+        return
+    scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
+
+    check("the game lists [0, 1, 2, 3, 21]",
+          scenario.scenario_ids(base) == [0, 1, 2, 3, 21],
+          f"got {scenario.scenario_ids(base)}")
+    check("still sorted, so Fateful Brothers stays last",
+          scenario.scenario_ids(base) == sorted(scenario.scenario_ids(base)))
+
+    expected = ["Saiyan Saga", "Tree of Might", "Lord Slug", "Final Battle",
+                "Fateful Brothers"]
+    for row, want in enumerate(expected):
+        pine = PatchedPine(base, {scenario.cursor: bytes([row])})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        check(f"row {row} says {want!r}",
+              menu.speaker.said == ["Select Scenario", want],
+              f"said {menu.speaker.said}")
+
+    # A row past the end of the list is not an answer.
+    pine = PatchedPine(base, {scenario.cursor: b"\x06"})
+    menu = reader()
+    for tick in range(6):
+        menu.poll(pine, tick * 0.1)
+    check("a row beyond the list is read again rather than named",
+          menu.speaker.said == ["Select Scenario"], f"said {menu.speaker.said}")
+
+
 def test_a_newly_unlocked_scenario_costs_one_row() -> None:
     """An unknown scenario number must not disturb the names around it.
 
     Before the numbers were found, a longer list meant no names at all: the
     player heard "Scenario 1 of 4, name not known" on every row. Now only the
-    new one is unnamed, and the rest keep working.
+    new one is unnamed, and the rest keep working. Synthetic, because it has to
+    stay true of a scenario nobody has seen yet -- every real number is named.
     """
-    print("\nWhen a fifth scenario unlocks:")
-    base = load("row0")
+    print("\nWhen a sixth scenario unlocks:")
+    base = load("scen5_final")
     if base is None:
-        check("row0 present", False, "capture missing")
+        check("scen5_final present", False, "capture missing")
         return
     scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
-    # A new scenario numbered 7 lands between Lord Slug and Fateful Brothers,
-    # which is where the numbers say it must go.
-    grown = {scenario.count_address: b"\x05"}
-    for row, which in enumerate([0, 1, 2, 7, 21]):
+    # A scenario numbered 7 would land between Final Battle and Fateful
+    # Brothers, which is where the numbers say it must go.
+    grown = {scenario.count_address: b"\x06"}
+    for row, which in enumerate([0, 1, 2, 3, 7, 21]):
         grown[scenario.id_array + row * scenario.id_stride] = bytes([which])
 
-    expected = ["Saiyan Saga", "Tree of Might", "Lord Slug",
-                "Scenario 4 of 5, name not known.", "Fateful Brothers"]
+    expected = ["Saiyan Saga", "Tree of Might", "Lord Slug", "Final Battle",
+                "Scenario 5 of 6, name not known.", "Fateful Brothers"]
     for row, want in enumerate(expected):
         pine = PatchedPine(base, {**grown, scenario.cursor: bytes([row])})
         menu = reader()
@@ -617,13 +662,8 @@ def test_a_newly_unlocked_scenario_costs_one_row() -> None:
               menu.speaker.said == ["Select Scenario", want],
               f"said {menu.speaker.said}")
 
-    # A row past the end of the list is not an answer.
-    pine = PatchedPine(base, {**grown, scenario.cursor: b"\x06"})
-    menu = reader()
-    for tick in range(6):
-        menu.poll(pine, tick * 0.1)
-    check("a row beyond the list is read again rather than named",
-          menu.speaker.said == ["Select Scenario"], f"said {menu.speaker.said}")
+    check("exactly one row of six is unnamed",
+          sum("not known" in want for want in expected) == 1)
 
 
 def test_a_moved_block() -> None:
@@ -700,6 +740,7 @@ def main() -> int:
     test_the_grown_scenario_list()
     test_the_four_entry_list()
     test_the_scenario_is_asked_for_by_name()
+    test_the_five_entry_list()
     test_a_newly_unlocked_scenario_costs_one_row()
     test_a_moved_block()
     test_unmoved_captures_are_not_searched()

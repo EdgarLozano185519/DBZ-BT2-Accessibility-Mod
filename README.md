@@ -82,7 +82,8 @@ automatically. **NVDA is not bundled** — install it yourself if you want it.
 - the **main menu** — all ten options
 - **Options** — Save and Load, Controller, Screen, Sound, Exit
 - **Select Scenario**, the Dragon Adventure scenario list — Saiyan Saga, Tree
-  of Might, Lord Slug and Fateful Brothers, chosen with Up and Down
+  of Might, Lord Slug, Final Battle and Fateful Brothers, chosen with Up and
+  Down
 - **Game Level**, the difficulty chooser reached after picking a story event in
   Dragon Adventure — Level 1, 2 or 3, chosen with Left and Right
 
@@ -106,7 +107,7 @@ A few things you may hear it say, and what they mean:
 - **"Looking for the subtitles."** or **"Looking for the menu."** — the game
   has put something somewhere new and the guide is searching for it. It takes
   a moment and then carries on
-- **"Scenario 4 of 5, name not known."** — you have unlocked a scenario whose
+- **"Scenario 5 of 6, name not known."** — you have unlocked a scenario whose
   name the guide has never been shown. Everything else in the list still reads
   correctly
 - **"the two copies of the cursor disagree"** — the guide can see the screen

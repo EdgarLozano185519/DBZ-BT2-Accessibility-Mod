@@ -26,11 +26,12 @@ Menus speak through NVDA, driven by the game's own memory:
   name as well, which was the first event's name whatever the player had
   chosen; that is gone as of 2026-09-07.
 - **Select Scenario** -- the Dragon Adventure scenario list: Saiyan Saga, Tree
-  of Might, Lord Slug and Fateful Brothers on this save, chosen with Up and
-  Down. **Confirmed live on all four rows 2026-09-07**, each against a
-  screenshot. Names are keyed by the game's own scenario numbers, read from
-  `0x00B05308`, so they do not shift when a scenario unlocks -- only the new
-  one is unnamed. See *When you unlock a scenario* below.
+  of Might, Lord Slug, Final Battle and Fateful Brothers on this save, chosen
+  with Up and Down. Names are keyed by the game's own scenario numbers, read
+  from `0x00B05308`, so they do not shift when a scenario unlocks -- only the
+  new one is unnamed. **Proven by a real unlock the same day**: Final Battle
+  arrived and cost one row rather than five. See *When you unlock a scenario*
+  below.
 - **C teaches this map's scale by teleporting, so T can reach the story
   marker.** Added and **confirmed in play 2026-09-07**, twice on the Blue
   landmass map, after which T reached the story objective. Six short commanded
@@ -112,9 +113,11 @@ the rule can be widened by measurement.
 
 ## When you unlock a scenario
 
-**One row will say "Scenario 4 of 5, name not known." and the rest keep their
+**One row will say "Scenario 5 of 6, name not known." and the rest keep their
 names.** That is the whole cost now: the mod reads the game's own record of
 *which* scenario each row is, so the names do not shift when the list grows.
+This has been through a real unlock -- Final Battle, 2026-09-07 -- and behaved
+exactly that way.
 
 To name the new one, with the guide app closed and PCSX2 on the Select Scenario
 screen:
@@ -186,7 +189,7 @@ numpy/scipy/Pillow) for testing menus without the full guide.
 **The offline suites need no emulator, no game and no player**, and are the
 first thing to run after changing any of this:
 
-    ..\..\.venv\Scripts\python.exe test_menus.py    # 176 checks, 26 captures
+    ..\..\.venv\Scripts\python.exe test_menus.py    # 190 checks, 27 captures
     ..\..\.venv\Scripts\python.exe test_story.py    # 44 checks
     ..\..\.venv\Scripts\python.exe test_mapcal.py   # 30 checks
 
@@ -321,11 +324,11 @@ but `BUILD-INFO.json` and `SHA256SUMS.txt` still describe the previous build.
 Stamping is one command and is the player's call, not something to do because
 the code changed.
 
-**5. Should the captures be pruned?** `reference/probe` is now **861 MB**, 26
+**5. Should the captures be pruned?** `reference/probe` is now **892 MB**, 27
 snapshots at 31 MB each, and it is git-ignored so it costs nothing but disk.
 The archive rule is one capture per screen, and two groups break it on purpose:
 `cut0`-`cut7`, of which three are duplicate boxes, kept until the stale-pointer
-gate is settled; and the twelve scenario-list captures, which are the evidence
+gate is settled; and the thirteen scenario-list captures, which are the evidence
 for `0x00B05308` and for every name on that screen. The scenario ones have
 earned their place. The cutscene duplicates are the ones to drop first.
 
@@ -733,10 +736,15 @@ something that changes with the cursor cannot find something that does not.
 
 - **`0x00B05308` is an array of which scenarios the list is showing**, one per
   row in row order: `[0, 21]` at two entries, `[0, 1, 21]` at three,
-  `[0, 1, 2, 21]` at four. Names are keyed by those numbers instead of by row,
-  so **an unlock now costs one unnamed row rather than all of them.** Checked
-  against all twelve captures that have a screenshot beside them, over three
-  list lengths and several sessions, then read back live.
+  `[0, 1, 2, 21]` at four, `[0, 1, 2, 3, 21]` at five. Names are keyed by those
+  numbers instead of by row, so **an unlock now costs one unnamed row rather
+  than all of them.** Checked against all thirteen captures that have a
+  screenshot beside them, over four list lengths and several sessions, then
+  read back live.
+- **Then a real unlock tested it.** Final Battle arrived as number 3, landed
+  between Lord Slug and Fateful Brothers exactly where numerical order says,
+  and cost one row. Adding it was one line. The previous design would have cost
+  all five names.
 - **It also explains the insertions.** The list is the unlocked scenarios in
   numerical order, and Fateful Brothers is 21, so it keeps being pushed to the
   end. What looked like an arbitrary rule is a sort.
@@ -751,7 +759,7 @@ something that changes with the cursor cannot find something that does not.
 - **`rowscan --capture`** keeps the RAM as well as the picture, and throws away
   any capture the player moved during rather than pairing a picture of one row
   with a capture of another.
-- 176 checks in `test_menus.py`, over 26 captures.
+- 190 checks in `test_menus.py`, over 27 captures.
 
 ### 2026-09-07: the scenario list, and a cursor that was never one
 

@@ -595,18 +595,24 @@ SCREENS = [
         #     two entries    [0, 21]
         #     three entries  [0, 1, 21]
         #     four entries   [0, 1, 2, 21]
+        #     five entries   [0, 1, 2, 3, 21]
         #
         # which is why Fateful Brothers keeps being pushed to the end and the
         # new scenarios keep arriving before it -- the list is the unlocked
-        # scenarios in numerical order, and 21 sorts after 0, 1 and 2. Names
+        # scenarios in numerical order, and 21 sorts after 0, 1, 2 and 3. Names
         # keyed by that number do not shift when the list grows, so **an unlock
         # now costs one unnamed row rather than all of them.**
         #
-        # Checked against all twelve captures that have a screenshot beside
-        # them, spanning three list lengths and several PCSX2 sessions: in
-        # every one, the number at the highlighted row names the scenario in
-        # the picture. The array is also identical at every row of the same
-        # list, as a list's contents should be.
+        # Checked against all thirteen captures that have a screenshot beside
+        # them, spanning four list lengths and several PCSX2 sessions: in every
+        # one, the number at the highlighted row names the scenario in the
+        # picture. The array is also identical at every row of the same list,
+        # as a list's contents should be.
+        #
+        # **The design was then tested by the thing it was built for.** Final
+        # Battle unlocked as number 3 and cost exactly one row: every other
+        # name kept working, and adding it was the line below. Under the old
+        # arrangement it would have cost all five.
         #
         # `0x00B05370` reads the length, and bounds the array read.
         id_array=0x00B05308, id_stride=4,
@@ -615,6 +621,7 @@ SCREENS = [
             0: "Saiyan Saga",
             1: "Tree of Might",
             2: "Lord Slug",
+            3: "Final Battle",
             21: "Fateful Brothers",
         },
         # A scenario number with no name is one the player has just unlocked.

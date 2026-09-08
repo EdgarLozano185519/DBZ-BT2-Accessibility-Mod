@@ -385,7 +385,7 @@ looks like.
 The list of scenarios, reached from Dragon Adventure before the story events
 and the Game Level chooser. A vertical list that wraps; the highlighted row
 stays centred and the names scroll through it. On this save it now holds
-**four** entries, having held two and then three earlier the same day.
+**five** entries, having held two, three and four earlier the same day.
 
 - **Marker** -- `mc_da_2_text_off_l` at `0x00D53440`. Known to outlive the
   screen; see below and the screen-identification section.
@@ -399,7 +399,7 @@ stays centred and the names scroll through it. On this save it now holds
   one per row, in row order. This is what the names are keyed by; see below.
 
 Scenario numbers, not row numbers: `0` Saiyan Saga, `1` Tree of Might,
-`2` Lord Slug, `21` Fateful Brothers.
+`2` Lord Slug, `3` Final Battle, `21` Fateful Brothers.
 
 ### The cursor was wrong, and a two-entry list could not show it
 
@@ -492,9 +492,10 @@ appear.
     two entries    [0, 21]
     three entries  [0, 1, 21]
     four entries   [0, 1, 2, 21]
+    five entries   [0, 1, 2, 3, 21]
 
-    0  Saiyan Saga        1  Tree of Might
-    2  Lord Slug         21  Fateful Brothers
+    0  Saiyan Saga        1  Tree of Might      2  Lord Slug
+    3  Final Battle      21  Fateful Brothers
 
 It sits in the same allocation as the cursor and the length, a hundred bytes
 below them.
@@ -504,11 +505,17 @@ the unlocked scenarios in numerical order, and 21 sorts after 0, 1 and 2. So
 Fateful Brothers keeps being pushed to the end and each new scenario arrives
 before it. What looked like an arbitrary insertion rule is just a sort.
 
-**Verified against all twelve captures with a screenshot beside them**, across
-three list lengths and several PCSX2 sessions: in every one, the number at the
-highlighted row names the scenario in the picture. The array also reads
+**Verified against all thirteen captures with a screenshot beside them**,
+across four list lengths and several PCSX2 sessions: in every one, the number
+at the highlighted row names the scenario in the picture. The array also reads
 identically at every row of the same list, as a list's contents must, and it
 was read back live afterwards.
+
+**Then it was tested by the case it was built for.** Final Battle unlocked as
+number 3 a few hours later, landed between Lord Slug and Fateful Brothers
+exactly where numerical order says it must, and cost **one** row: the other
+four kept their names and adding the fifth was a single line. Under the design
+it replaced, that unlock would have cost all five.
 
 **What it buys.** Names are keyed by scenario number instead of row, so they no
 longer shift when the list grows. **An unlock costs one unnamed row rather than
@@ -1475,7 +1482,7 @@ interpretable.
 - **Scenario names still have to be learned one at a time.** The scenario
   number is now read from the game, so a name never moves once learned, but the
   names themselves are artwork and there is nowhere to read them from. Twenty-
-  six scenarios exist on the disc and four are named.
+  six scenarios exist on the disc and five are named.
 - Other screens may also be misread as gameplay by the HUD detector, or shadow
   one another the way Title shadowed Game Level. Only the screens with captures
   on disk have been checked, and each new screen needs the same two questions
