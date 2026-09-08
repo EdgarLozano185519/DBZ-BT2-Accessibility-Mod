@@ -25,13 +25,13 @@ Menus speak through NVDA, driven by the game's own memory:
   F12 reads the instruction line, the game's own text. It used to read an event
   name as well, which was the first event's name whatever the player had
   chosen; that is gone as of 2026-09-07.
-- **Select Scenario** -- the Dragon Adventure scenario list: Saiyan Saga, Tree
-  of Might, Lord Slug, Final Battle and Fateful Brothers on this save, chosen
-  with Up and Down. Names are keyed by the game's own scenario numbers, read
-  from `0x00B05308`, so they do not shift when a scenario unlocks -- only the
-  new one is unnamed. **Proven by a real unlock the same day**: Final Battle
-  arrived and cost one row rather than five. See *When you unlock a scenario*
-  below.
+- **Select Scenario** -- the Dragon Adventure scenario list, chosen with Up and
+  Down. Five scenarios on this save; **all twenty-five on the disc are named**,
+  walked out of the game's own name table. Names are keyed by the game's own
+  scenario numbers, read from `0x00B05308`, so unlocking a scenario neither
+  shifts the others nor leaves the new one unnamed. Proven by a real unlock the
+  same day, and the reason this part of the guide can be handed to someone else.
+  See *When you unlock a scenario* below.
 - **C teaches this map's scale by teleporting, so T can reach the story
   marker.** Added and **confirmed in play 2026-09-07**, twice on the Blue
   landmass map, after which T reached the story objective. Six short commanded
@@ -132,11 +132,10 @@ second or two, and go round the list once. It photographs each row; the new
 name is read off the picture of the row that went unnamed, and added as one
 line to `labels_by_id` in `bt2/menus.py`, keyed by its scenario number.
 
-**Why the name has to be seen once, for now:** the guide has no table of
-scenario names beyond the ones already written down. That may not be true for
-much longer -- all twenty-six names turn out to be in memory as text, and item
-3 under Next steps says what is left to prove before the guide can read them
-for itself. If that works, nobody ever has to be shown a scenario name again.
+**Why this should never be needed:** every scenario name on the disc already
+ships, walked out of the game's own table. Hearing "name not known" would mean
+the game used a scenario number that table does not cover, which would be worth
+knowing about. Item 3 under Next steps has the detail.
 
 ## Releasing
 
@@ -192,7 +191,7 @@ numpy/scipy/Pillow) for testing menus without the full guide.
 **The offline suites need no emulator, no game and no player**, and are the
 first thing to run after changing any of this:
 
-    ..\..\.venv\Scripts\python.exe test_menus.py    # 190 checks, 27 captures
+    ..\..\.venv\Scripts\python.exe test_menus.py    # 223 checks, 27 captures
     ..\..\.venv\Scripts\python.exe test_story.py    # 44 checks
     ..\..\.venv\Scripts\python.exe test_mapcal.py   # 30 checks
 
@@ -231,7 +230,7 @@ loop was acceptable.
 
 **The guesswork is what C removes.** It has been run twice in play on the Blue
 landmass map, and T reached the story marker from it. Whether it holds on a map
-other than that one is the open question -- see item 6 under Next steps.
+other than that one is the open question -- see item 7 under Next steps.
 
 ## The save file
 
@@ -757,7 +756,7 @@ it is not, the question is closed for half an hour's work.
 
 ### 2026-09-07, in one paragraph
 
-Four entries follow, **newest first**, from a single long session that started
+Five entries follow, **newest first**, from a single long session that started
 with the player saying menus had stopped reading their options. The arc is
 worth having in order, because each step made the next one findable. A stale
 Dragon Adventure marker was taking the main menu's name away, and the story
@@ -766,12 +765,38 @@ scenario list, whose cursor had never been an index -- a two-entry list cannot
 tell a cursor from a coin toss. Fixing *that* left names keyed by list length,
 which cost the player every name the next time a scenario unlocked. And that
 finally prompted the right question -- where is the *list*, not the cursor --
-which found `0x00B05308` and ended the problem for good. **Later entries
-supersede earlier ones**; the superseded claims are marked where they appear.
+which found `0x00B05308`. Asking the same kind of question once more -- where
+are the *names* -- found them too, in a table the notes had long insisted did
+not exist, and that is what makes the guide handable to someone else. **Later
+entries supersede earlier ones**; the superseded claims are marked where they
+appear.
 
-Two lessons outlast the addresses. A marker's exclusivity is only as good as
-the routes the captures took to reach the screen. And a search that asks for
-something that changes with the cursor cannot find something that does not.
+Three lessons outlast the addresses. A marker's exclusivity is only as good as
+the routes the captures took to reach the screen. A search that asks for
+something that changes with the cursor cannot find something that does not. And
+a negative recorded in these notes is worth re-testing before it is built on --
+"the names are nowhere in RAM" was written down as settled and was false.
+
+### 2026-09-07: every scenario named, from the game's own table
+
+- **All twenty-five scenario names ship with the guide**, walked out of a table
+  the game keeps in RAM. **This is what makes the guide handable to someone
+  else**: a player who unlocks a scenario hears its name, with no tools, no
+  editing and nobody who has Claude.
+- **The notes were wrong for weeks.** They said the names were artwork "found
+  nowhere in RAM and nowhere in the disc corpus, searched end to end". They are
+  in RAM, in the same shape as the event-name table -- which should have been
+  the hint, since that table had already been found and had already taught the
+  lesson that such a table must be walked rather than indexed.
+- **Reading it live was tested and does not work.** PCSX2 was restarted, the
+  save reloaded to the scenario list, and the names were not at the address --
+  nor anywhere else in 31 MB. The table loads during play, not with the screen.
+  So it was read once, offline, and the answer shipped.
+- **Anchored at five screenshots**, with the anchor at 21 carrying everything
+  between. The tests walk the table out of a capture and check every shipped
+  name against it.
+- **Stopped at 24 on purpose**: the table continues into battle stage names.
+- 223 checks in `test_menus.py`, over 27 captures.
 
 ### 2026-09-07: the game's own list, and the end of re-deriving names
 
@@ -800,7 +825,7 @@ something that changes with the cursor cannot find something that does not.
 - **`rowscan --capture`** keeps the RAM as well as the picture, and throws away
   any capture the player moved during rather than pairing a picture of one row
   with a capture of another.
-- 190 checks in `test_menus.py`, over 27 captures.
+- 223 checks in `test_menus.py`, over 27 captures.
 
 ### 2026-09-07: the scenario list, and a cursor that was never one
 

@@ -106,7 +106,7 @@ The main menu also writes its sprite names into a per-screen table on a `0xC0`
 granule at `0x00CF9800`, and **that block outlives the other one** -- on the
 Dragon Library capture `mc_menu_lineanime` is gone from `0x00AA15EC` and still
 present at `0x00CF9B00`. Five entries there are unique to the main menu across
-all 26 captures on disk:
+all 27 captures on disk:
 
     0x00CF9D40  mc_yaji_down
     0x00CF9E00  mc_yaji_up
@@ -135,8 +135,8 @@ resulting shift, so a lone accidental hit still fails. Rate limited to once
 every 20 seconds and announced as "Looking for the menu.", for the same reason
 the subtitle search is announced.
 
-Checked offline against all 26 captures in `test_menus.py`: the search returns
-0 on both main-menu captures, `None` on the other 24, and finds a synthetic
+Checked offline against all 27 captures in `test_menus.py`: the search returns
+0 on both main-menu captures, `None` on the other 25, and finds a synthetic
 `0x2000` displacement of the whole band.
 
 **Why this was built.** In the three logged sessions where the main menu was
@@ -1555,17 +1555,18 @@ interpretable.
   reader's scene-buffer rule.
 - **Scenario names still have to be learned one at a time.** The scenario
   number is now read from the game, so a name never moves once learned, but the
-  names themselves have to be seen once each. **This may be about to change:**
-  all twenty-six are in RAM as text, and the section on the scenario-name table
-  says what is left to prove. Five of twenty-six are named by hand today.
+  names are all shipped now, walked out of the game's own table rather than
+  seen one at a time -- see the scenario-name table below. The residue is that
+  entries 22 to 24 are past the last screenshot anchor.
 - Other screens may also be misread as gameplay by the HUD detector, or shadow
   one another the way Title shadowed Game Level. Only the screens with captures
   on disk have been checked, and each new screen needs the same two questions
   asked of it.
 - ~~The Select Scenario labels are true for the current unlock state only.~~
-  **No longer true**: they are keyed by the game's own scenario numbers, so an
-  unlock leaves them alone. What remains is the entry above -- each new
-  scenario's name has to be seen once.
+  ~~Each new scenario's name has to be seen once.~~ **Neither is true any
+  more**: all twenty-five names ship, walked out of the game's own table and
+  keyed by its scenario numbers. What is left is that entries 22 to 24 sit past
+  the last screenshot anchor and rest on the table's order alone.
 - The story event list is still unmapped, and it is the screen most likely to
   carry the current-event index. Whether `mc_da_2_text_off_l` or
   `mc_da_5_lv_csr` also match there is unknown -- there is no capture of it --
