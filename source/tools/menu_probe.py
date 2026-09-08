@@ -21,6 +21,15 @@ Usage, one snapshot per cursor position:
 Each snapshot also saves a screenshot, so which option was actually on screen
 can be confirmed afterwards instead of trusted from memory.
 
+**Two commands answer most questions without deriving anything.** `check` says
+what the mod thinks it is looking at and why, and is the first thing to run
+when a screen is silent or names itself wrongly.  `rowscan` photographs every
+row the player visits beside the addresses you name, which is how a menu's
+meaning gets settled once the candidates are known -- see the Select Scenario
+section of docs/memory-map.md for what that looked like in practice.
+
+Run `python menu_probe.py` with no arguments for the full list.
+
 Snapshots land in reference/probe/, which is git-ignored -- they are captures
 of game memory and must never be committed.
 """
@@ -1277,7 +1286,16 @@ def main(argv: list[str]) -> int:
             if argument.startswith("--seconds="):
                 seconds = float(argument.split("=", 1)[1])
         return watch(addresses, seconds)
-    print(f"Unknown command '{command}'. Use snap, find or watch.")
+    print(f"Unknown command '{command}'. Commands are:")
+    print("  snap NAME [--full]        capture RAM and the screen")
+    print("  find NAME...             which addresses followed the cursor")
+    print("  check                    what the mod thinks it is looking at")
+    print("  dryrun [--seconds=N]     run the real reader and echo what it says")
+    print("  rowscan ADDR... [--capture]")
+    print("                           photograph every row the player visits")
+    print("  watch ADDR...            what a few addresses do while you move")
+    print("  positionscan / fit / pressscan / autoscan / labels / keys /")
+    print("  recorrelate              the older derivation tools")
     return 1
 
 

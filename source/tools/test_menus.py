@@ -4,11 +4,16 @@ No emulator, no player.  The captures in `reference/probe` are real EE RAM with
 a screenshot beside each one, so which screen each of them *is* was read off a
 picture rather than out of the code under test.  Twenty-six of them, covering
 six screens and a cutscene, which is enough to insist that every marker matches
-its own screen and no other.
+its own screen and no other -- in both directions, since a marker that matches
+a screen it does not belong to is how three separate faults reached the player.
 
-The synthetic cases cover the two things captures cannot show: a screen whose
-own block has moved -- which is what the player heard as menus reading their
-subtitles instead of their options -- and the refusals.
+The scenario list gets the most attention here because it has cost the most.
+Twelve of the captures are of it, across three list lengths and several PCSX2
+sessions, and every one is checked against the row its screenshot shows.
+
+The synthetic cases cover what captures cannot: a screen whose own block has
+moved, a marker left resident by a screen that has gone, two copies of a cursor
+that will not agree, and a scenario unlocking that the mod has no name for.
 
     python test_menus.py
 """

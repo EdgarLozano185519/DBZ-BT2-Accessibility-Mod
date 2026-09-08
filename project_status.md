@@ -53,7 +53,11 @@ Menus speak through NVDA, driven by the game's own memory:
   heading; G reads the player's own forward axis and answers as a turn plus a
   distance. On a key only, and it says when it cannot tell.
 - **Screen detection** -- the announcer works out which screen is showing and
-  picks the matching labels, or stays silent when it cannot.
+  picks the matching labels, or stays silent when it cannot. Two screens
+  matching at once means it does not know and says so; a marker known to
+  outlive its screen loses to one that is not; and when a screen cannot be
+  named or its cursor cannot be trusted, that is written to the log with the
+  reason.
 - **F12 says the prose on screen, on every screen.** The character's spoken
   line for the highlighted main menu option, the Game Level instruction line,
   Dragon Library and Select Scenario prose, a cutscene box -- all of it, read as
@@ -65,10 +69,12 @@ Menus speak through NVDA, driven by the game's own memory:
 - **Story text speaks by itself.** Added 2026-09-07 and heard in play the same
   day. Cutscene dialogue and narration are announced as the game displays
   them, with no key press: the player advances the scene and each box is read.
-  Save notices ("MEMORY CARD slot 1") are spoken too, at the player's request.
   Nothing is transcribed into a table -- `0x008C6244` is the game's own pointer
   to the text it is drawing, so this is not tied to English. See **Story text**
   in `docs/memory-map.md`.
+  **Only scene text is announced**, which is what keeps unmapped menus quiet;
+  a save notice is no longer spoken by itself and is read on F12 instead. That
+  was the player's call -- see the paragraph on save notices below.
 
 Menu reading is **part of the guide app**. `bt2/menus.py` runs inside the guide
 worker's main loop, at the one point where navigation guidance is suspended --
@@ -256,8 +262,8 @@ and they show that F12 had never produced a single line in any session.
 `bt2.speech.note` writes to it without speaking, which is where screen
 detection now records why it stayed silent.
 
-**Two things about running the guide from a terminal**, both learned the hard
-way on 2026-09-07 and both cheap to trip over again:
+**Three things about running the guide from a terminal**, all learned the hard
+way on 2026-09-07 and all cheap to trip over again:
 
 - **PINE serves one client at a time.** A second connection does not fail
   cleanly, it *times out* -- so while the guide is running, `pine_check.py` and
@@ -270,6 +276,20 @@ way on 2026-09-07 and both cheap to trip over again:
   `waiting_guide("objective", speaker=Speaker())` directly and set
   `BT2_DESKTOP_UI=1` so the hotkeys still require the game window to have
   focus -- otherwise typing in a terminal fires teleports.
+- **The worker cannot be deployed while the guide app is open.** Windows locks
+  the running executable, so `Copy-Item dist\guide-worker\* worker` fails on
+  `guide-worker.exe` and a few DLLs while quietly succeeding on the rest. It
+  looks like a partial failure and is actually harmless -- the support files
+  are identical between builds -- but **the player keeps running the old
+  worker**, which cost a whole round trip here: a fix was reported as deployed,
+  tested, and found not to be in the build. Close the app first, and confirm
+  afterwards with `build_release.py`'s `stale_sources()` or by hashing
+  `dist\guide-worker` against `worker`.
+
+To hear what the mod would say without starting the app at all, use
+`python menu_probe.py dryrun --seconds=8`: it drives the real reader against
+the live game and echoes every line. That is also the quickest check that a
+change reached the code the player runs.
 
 ## Decisions waiting on the player
 
@@ -301,10 +321,21 @@ but `BUILD-INFO.json` and `SHA256SUMS.txt` still describe the previous build.
 Stamping is one command and is the player's call, not something to do because
 the code changed.
 
-**5. Should the 700 MB of captures be pruned?** `reference/probe` now holds
-`cut0`-`cut7` at 31 MB each. The archive rule is one capture per screen; five
-of the eight are distinct boxes and three are duplicates. Keeping them all
-until the stale-pointer gate is settled is deliberate -- they are the evidence.
+**5. Should the captures be pruned?** `reference/probe` is now **861 MB**, 26
+snapshots at 31 MB each, and it is git-ignored so it costs nothing but disk.
+The archive rule is one capture per screen, and two groups break it on purpose:
+`cut0`-`cut7`, of which three are duplicate boxes, kept until the stale-pointer
+gate is settled; and the twelve scenario-list captures, which are the evidence
+for `0x00B05308` and for every name on that screen. The scenario ones have
+earned their place. The cutscene duplicates are the ones to drop first.
+
+**6. Should OCR be tried for the screens that are still silent?** Raised by the
+player 2026-09-07. It would not have helped the scenario list -- that was an
+identity problem, and memory answered it -- but the unmapped menus (Item Shop,
+Data Center, Ultimate Battle Z, Evolution Z, the story event list) are silent
+precisely because their labels are artwork. Notes on engines, costs and the
+risk of confident misreadings are under *Reading labels that are artwork*
+below. Nothing is installed, and no OCR has been attempted yet.
 
 Older, still open: **pan the guidance tones by heading** and **speak the
 heading itself**, both under Also worth doing, both deliberately not done
@@ -360,38 +391,39 @@ rather than by precedence.
 any session. It is kept because the reasoning stands and it costs nothing until
 it is needed, but it was insurance and not the fix.
 
-### 2. Select Scenario has no cross-check left
+### 2. Select Scenario reads its cursor once, and no second copy exists
 
-**The third-scenario fault is fixed and confirmed live**, so what remains is
-the evidence it cost. Every other readable screen here reads its cursor twice
-over; this one now reads it once.
+**Settled 2026-09-07, offline.** Every other readable screen here reads its
+cursor twice over and stays silent if the copies disagree. This one cannot,
+and that is now measured rather than assumed.
 
 `0x00D53625` was the cursor from the day this screen was mapped and is not an
 index at all -- it reads 1 for two different rows. It survived six cued
 presses, three captures and a held-out seventh because the list had **two**
-entries, where position and parity are the same thing. `0x00B0536C`, until now
-the cross-check, is the real index: a bijection over the three rows, and it
-explains the rows drawn above and below the highlighted one in all three
-screenshots as well.
+entries, where position and parity are the same thing. `0x00B0536C`, until then
+the cross-check, is the real index, and the pair was never a pair.
 
-So the pair was never a pair, and removing the impostor leaves one address.
-Finding a genuine second copy is a ramp search over the grown list:
+The search for a genuine second copy needed the player only until the
+four-entry captures existed. Run over all **twelve** scenario captures at once
+-- four rows of the four-entry list, seven of the two-entry, one of the
+three-entry, each with the row read off its screenshot -- asking for any
+address that tracks the row, at any scale, or that counts up by one per row
+from any base:
 
-    python menu_probe.py positionscan --screen="Select Scenario"         --cues=Down,Down,Down,Down,Down,Down
-    # read the rows off the screenshots, then
-    python menu_probe.py fit 2,0,1,2,0,1
+    only 0x00B0536C tracks the row in all twelve captures
 
-Two minutes with the player at the controls and 31 MB per press. **Worth doing
-before this screen is next changed**, and not done unasked.
+Twelve offset-ramps fit the four-entry list and every one of them fails on the
+two- and three-entry captures. **There is no second copy in EE RAM**, at least
+not at the moments captured; scratchpad and VU memory are outside what PINE
+reads here and have not been looked at.
 
-Two smaller things fell out of the same session and are worth keeping in view:
-
-- **`0x00B05370` is the list length**, now confirmed at 2, 3 and 4. It bounds
-  the scenario-number array and makes an unlock detectable rather than silently
-  wrong.
-- **A newly unlocked scenario says "Scenario N of M, name not known."** That is
-  the design working: its name has never been seen, and adding it is one line.
-  The rest of the list keeps its names, which is what `0x00B05308` bought.
+**What stands in for it.** The row is bounded by the length at `0x00B05370`,
+and the scenario number it resolves to must be one the mod has a name for. A
+drifted or half-written read therefore lands out of range, or on a number with
+no name, and says "name not known" rather than naming the wrong scenario. That
+is weaker than two copies agreeing -- it cannot catch a read that lands on a
+*different valid* row -- and it is the reason this screen is worth re-checking
+first if it ever misbehaves again.
 
 ### 3. The event name is gone from F12, and reading it properly still needs an index
 
@@ -426,15 +458,16 @@ them -- see Testing with the player.
   event, check it still tracks. Every cursor here is held to being tested on a
   transition it was not derived from; this one has not been. If it goes silent
   afterwards that is the two mirrors disagreeing, which is the design working.
-- **The Select Scenario labels, when a third scenario unlocks.** The names are
-  artwork, so they come from a table we wrote, indexed by position. The mod now
-  announces **"Scenario 3, name not known."** for a row it has no name for, so
-  a grown list is audible rather than silent. That announcement is the signal
-  to re-check: appending is harmless, but a scenario *inserted* above Fateful
-  Brothers would shift it and the mod would misname it confidently. Whether the
-  game appends or inserts cannot be settled while the list has two entries.
-  **If the player ever hears it, re-derive the labels rather than just adding
-  one.**
+- ~~The Select Scenario labels, when a third scenario unlocks.~~ **Done, twice
+  over.** A third and then a fourth unlocked on 2026-09-07, the game turned out
+  to *insert* rather than append, and the cursor the labels were indexed by
+  turned out never to have been an index. All of it is settled and the names
+  now hang off the game's own scenario numbers. See item 1 and the two
+  scenario entries under Recently finished.
+- **The main menu, with the stale-marker fix in.** The precedence rule went in
+  after the last session the player ran, so it has not been heard working.
+  Reaching the main menu after having been inside Dragon Adventure is the case
+  that used to fail; it should now name the screen and read its options.
 - **The Dragon Library marker, in a second run.** It rests on a single visit,
   unlike the main menu's and Options'.
 
@@ -451,10 +484,15 @@ them -- see Testing with the player.
   came to be silent.
 - **Dragon Library** -- detected, but cursor and labels both unknown.
 - **Ultimate Battle Z and the rest** -- not detected at all, so each needs a
-  marker found before a cursor is worth looking for.
+  marker found before a cursor is worth looking for. These are also the
+  screens an OCR fallback would help most; see *Reading labels that are
+  artwork*.
 
 Follow **Adding a screen** in `docs/memory-map.md`; it is a checklist because
-this session skipped two of its steps and shipped two bugs.
+sessions have skipped its steps and shipped bugs each time. Two entries were
+added to it on 2026-09-07 and both were paid for: check a marker against
+captures taken by the *route* that reaches the screen, not just any captures;
+and for a list that grows, look for the list itself and not only its cursor.
 
 ### 6. Teleport-driven calibration: works. Does it work on a second map?
 
@@ -538,21 +576,73 @@ catch. If a stray line is ever heard, stop and capture at that moment:
 That is the single piece of evidence still missing, and it cannot be
 manufactured offline.
 
-**Three features the pointer makes cheap**, none of them started:
+**Features the pointer makes cheap:**
 
-- **Dragon Library and Select Scenario prose.** Both are unmapped screens whose
-  subtitle the pointer already reads correctly in captures. Reading them needs
-  no new addresses at all.
-- **The 26 scenario synopses**, resident at `0x00D1E3C0`-`0x00D24D40` whenever
-  Dragon Adventure is open. These are the intros to each Dragon Adventure
-  scenario, sitting in RAM at known addresses -- but the game renders them from
-  a computed offset with no display copy, so speaking the *highlighted* one
-  needs the current-scenario index, which is the same missing piece as the
-  event name in item 1.
+- ~~Dragon Library and Select Scenario prose.~~ **Done.** F12 reads whatever is
+  on screen, mapped or not, so both are covered and needed no new addresses.
+- **The 26 scenario synopses** are now the most promising piece of work here,
+  because the thing that blocked them has gone. They are resident at
+  `0x00D1E3C0`-`0x00D24D40` whenever Dragon Adventure is open, and the game
+  renders them from a computed offset with no display copy, so speaking the
+  highlighted one needed the current-scenario index -- **which `0x00B05308`
+  now gives.** What is left is working out how a scenario number indexes the
+  pool: 26 scenarios share 123 boxes, so it is not a fixed stride and the pool
+  has to be walked, as the event-name table does. Every Dragon Adventure
+  capture on disk has the pool resident, so **this can be done entirely
+  offline**, with no player and no emulator.
+  It is also the closest thing to naming a scenario automatically: a newly
+  unlocked one whose name has never been seen could still be *described* in
+  the game's own words.
 - **Replacing the F12 subtitle machinery.** One pointer supersedes the ten
   recorded subtitle addresses and the shape-based relocation search, and does
   not move between runs where they do. See **Decisions waiting on the player**;
   this changes behaviour that already works, so it is not done unasked.
+
+### Reading labels that are artwork
+
+Raised by the player 2026-09-07: is OCR a better general plan than hunting an
+address per screen? Nothing has been built or installed; this is the reasoning
+so far, so the next session need not start it over.
+
+**It would not have helped the scenario list.** The bottleneck there was never
+reading the words -- a screenshot answers that in seconds -- but knowing
+whether a row still *meant* what it used to. That is an identity question, and
+memory answered it with `0x00B05308`.
+
+**Where it would pay** is the screens that are still silent: Item Shop, Data
+Center, Ultimate Battle Z, Evolution Z, the story event list. Those are silent
+because their labels are artwork *and* nobody has mapped a cursor. OCR would
+give the text and the selection together, and would generalise instead of
+needing a derivation session per screen.
+
+**Nothing is installed** -- no tesseract, no `winsdk`, no `cv2` -- checked
+2026-09-07. Engines, in the order they suit this project:
+
+- **`Windows.Media.Ocr`** is the right one. Built into Windows 10 and 11, so
+  no download and no shipping weight, offline, and the desktop app is already
+  C# where it is native. From Python it needs the `winsdk` package, about
+  10 MB.
+- **Tesseract** is 50-100 MB with language data, and a stylised outlined italic
+  font over an animated background is its weak spot.
+- **Neural OCR** (PaddleOCR, EasyOCR) pulls in torch: hundreds of megabytes
+  against an 8.5 MB worker. Out of proportion.
+
+**The risk is this project's own standard.** OCR produces a confidently wrong
+reading far more readily than a memory address does, and a confident error is
+the failure treated here as worse than silence. So it should be an *announced*
+fallback -- "reading the screen: Lord Slug" -- never something the player
+cannot tell apart from a memory read, and never allowed to override one.
+
+**A cheaper cousin worth remembering.** The labels are pre-rendered artwork, so
+each is the same bitmap every time. Hashing the highlighted row's pixels gives
+*identity* without reading words at all -- the same thing `0x00B05308` gave for
+scenarios, but generalised to any menu. Each name would still have to be seen
+once, as it must whatever route is taken, because the words exist nowhere but
+in the picture.
+
+**Cheapest next step, and it needs no player:** one screenshot of an unmapped
+menu through Windows OCR settles whether this font is legible to it at all. If
+it is not, the question is closed for half an hour's work.
 
 ### Also worth doing
 
@@ -599,16 +689,18 @@ manufactured offline.
 
 ### Smaller, optional
 
-- The standalone `menu_announcer.py` still says "Unknown screen" on every screen
-  transition, and does not have the mirror cross-check or the named-marker
-  precedence. It also knows only four screens: neither Game Level nor Select
-  Scenario is in its table, so it is silent on both. Nor does it have the
-  second-signature rule, the relocation search, or the story-reader fallback on
-  F12; it was pinned to the near marker only on 2026-09-07 so that it cannot
-  name a screen and then read a cursor it has no evidence for. The shipped
-  `bt2/menus.py` has all of it. It is a development tool, so this matters only
-  during a long probing session -- but it no longer reflects how the mod
-  behaves, and the gap is widening rather than holding steady.
+- The standalone `menu_announcer.py` **keeps its own `Screen` class and its own
+  table**, which is worth knowing before editing it: it shares nothing with
+  `bt2/menus.py` but the addresses, so a change there does not reach it and a
+  reference to the shipped class will not even resolve. What it lacks, as of
+  2026-09-07: the mirror cross-check, named-marker precedence, the rule that a
+  marker outliving its screen loses, the second signature and relocation
+  search, scenario numbers, and the story-reader fallback on F12. Its table
+  still holds four screens -- neither Game Level nor Select Scenario -- so it
+  is silent on both, and it still says "Unknown screen" on every transition.
+  It is a development tool, so this matters only during a long probing session,
+  but the gap is now wide enough that **`menu_probe.py dryrun` is the better
+  way to hear what the mod would say**: it drives the real reader.
 - Nothing checks read text against the extracted corpus at runtime, and that
   is now a settled decision rather than a gap. The corpus is a **search** tool
   rather than a runtime dependency -- the ten main menu subtitle lines score zero against it,
@@ -618,6 +710,24 @@ manufactured offline.
   refuses garbage and move-list glyphs without knowing a single word.
 
 ## Recently finished
+
+### 2026-09-07, in one paragraph
+
+Four entries follow, **newest first**, from a single long session that started
+with the player saying menus had stopped reading their options. The arc is
+worth having in order, because each step made the next one findable. A stale
+Dragon Adventure marker was taking the main menu's name away, and the story
+reader was filling the silence with option subtitles. Fixing that exposed the
+scenario list, whose cursor had never been an index -- a two-entry list cannot
+tell a cursor from a coin toss. Fixing *that* left names keyed by list length,
+which cost the player every name the next time a scenario unlocked. And that
+finally prompted the right question -- where is the *list*, not the cursor --
+which found `0x00B05308` and ended the problem for good. **Later entries
+supersede earlier ones**; the superseded claims are marked where they appear.
+
+Two lessons outlast the addresses. A marker's exclusivity is only as good as
+the routes the captures took to reach the screen. And a search that asks for
+something that changes with the cursor cannot find something that does not.
 
 ### 2026-09-07: the game's own list, and the end of re-deriving names
 
@@ -657,14 +767,16 @@ manufactured offline.
   what that re-check cost by being deferred.
 - **The game inserts, it does not append.** Tree of Might landed at index 1 and
   moved Fateful Brothers from 1 to 2, so extending the table would have renamed
-  both scenarios that were already there. Names are now keyed by list length,
-  read from `0x00B05370`, and a length with no table yields no names at all.
+  both scenarios that were already there. Names were keyed by list length as a
+  result -- **superseded hours later** by the scenario numbers above, after that
+  design cost the player every name at the next unlock.
 - **`menu_probe.py rowscan` is new**: it reads a few known addresses at 10 Hz
   and photographs the screen the moment they settle on a new value, so every
   row the player passes through is recorded beside a picture of it. Seconds and
   kilobytes, where `positionscan` costs minutes and 31 MB per press.
-- **The cross-check is gone with the impostor**, and that is a real loss --
-  item 2 under Next steps has the recipe for finding a genuine one.
+- **The cross-check is gone with the impostor**, and that is a real loss.
+  Searched for afterwards over all twelve scenario captures: **there is no
+  second copy in EE RAM.** See item 2 under Next steps.
 
 ### 2026-09-07: the leftover marker, and menus made quiet
 
@@ -685,9 +797,10 @@ manufactured offline.
   in every capture. F12 is outside the rule and still reads either.
 - **A silent row now explains itself.** Two cursor copies that will not agree
   used to mean permanent silence, indistinguishable from a broken mod. The mod
-  says so once and logs each distinct pair of values, which is what will
-  identify Select Scenario's real cursor now that a third scenario has
-  unlocked.
+  says so once and logs each distinct pair of values. **It worked**: that is
+  what identified Select Scenario's real cursor within the hour. The mechanism
+  stays for the next screen, though Select Scenario itself no longer has two
+  copies to compare.
 - **Diagnostics no longer repeat.** The first collision note wrote the same
   line 168 times in one session.
 - 126 checks in `test_menus.py`, 44 in `test_story.py`, all offline.
@@ -885,6 +998,11 @@ came from a test that produced a confidently wrong answer.
   pause or press a button does.
 - **A synthesised key press goes to whichever window has focus.** If that is the
   game, the game receives it. Say so before running one.
+- **`rowscan` is the cheap way to ask the player for evidence.** It needs no cue
+  schedule to follow: they press Down and pause, and every state they pass
+  through is recorded with a picture. A minute, and it settled two questions on
+  2026-09-07 that had each looked like a probing session. Prefer it to
+  `positionscan` unless a *new* address has to be searched for.
 
 ## Working notes
 

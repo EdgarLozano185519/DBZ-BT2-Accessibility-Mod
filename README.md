@@ -81,34 +81,54 @@ automatically. **NVDA is not bundled** — install it yourself if you want it.
 - the **title screen** — New Game, Load Game
 - the **main menu** — all ten options
 - **Options** — Save and Load, Controller, Screen, Sound, Exit
-- **Select Scenario**, the Dragon Adventure scenario list — Saiyan Saga and
-  Fateful Brothers, chosen with Up and Down
+- **Select Scenario**, the Dragon Adventure scenario list — Saiyan Saga, Tree
+  of Might, Lord Slug and Fateful Brothers, chosen with Up and Down
 - **Game Level**, the difficulty chooser reached after picking a story event in
   Dragon Adventure — Level 1, 2 or 3, chosen with Left and Right
 
-The scenario names are pictures rather than words in the game's memory, so the
-guide reads them from a list written by hand. That list is right for the
-scenarios unlocked when it was written. If you unlock another, the guide will
-not know its name, and rather than say nothing it says **"Scenario 3, name not
-known."** Please report it when you hear that: it means the list needs
-rebuilding, and the names it already knows may have shifted.
+The scenario names are pictures rather than words in the game's memory, so each
+one has to be seen once and written down by hand. The guide asks the game
+*which* scenario each row is, so the names it already knows stay right when you
+unlock something new — only the new one is unnamed, and it says **"Scenario 4
+of 5, name not known."** rather than guessing. Please report it when you hear
+that: it takes about a minute to add, and you only ever hear it once per
+scenario.
 
 Screens it recognises but has not mapped are named and then stay quiet; screens
 it does not recognise say so, rather than guessing. Where the game keeps two
-copies of the cursor, both are read, and if they ever disagree it stays silent
-rather than name the wrong option.
+copies of the cursor, both are read, and if they ever disagree it says so and
+leaves the row unnamed rather than naming the wrong option.
 
-**F12 speaks the game's own text.** On the main menu, the character's spoken
-line for the highlighted option. On Game Level, the instruction line — and an
-event name that is **currently wrong**, see below. It is on a key press so that
-browsing stays quick. If the text has moved since it was last recorded, F12
-says "Looking for the subtitles", finds it again, and carries on.
+A few things you may hear it say, and what they mean:
+
+- **"Unknown screen."** — it does not recognise where you are, so it will not
+  guess. F12 still reads whatever is written there
+- **"Looking for the subtitles."** or **"Looking for the menu."** — the game
+  has put something somewhere new and the guide is searching for it. It takes
+  a moment and then carries on
+- **"Scenario 4 of 5, name not known."** — you have unlocked a scenario whose
+  name the guide has never been shown. Everything else in the list still reads
+  correctly
+- **"the two copies of the cursor disagree"** — the guide can see the screen
+  but not which row you are on, so it will not name one. F12 still works
+
+**F12 speaks the game's own text, on any screen.** On the main menu, the
+character's spoken line for the highlighted option. On Game Level, the
+instruction line. On a screen the guide has never been taught, whatever is
+written there. It is on a key press so that browsing stays quick. If the text
+has moved since it was last recorded, F12 says "Looking for the subtitles",
+finds it again, and carries on; where there is genuinely nothing written, it
+says so rather than staying silent.
 
 **The story speaks by itself.** In a Dragon Adventure cutscene, each line of
 dialogue and narration is read aloud as the game puts it on screen. There is no
 key to press — advance the scene as you normally would and the guide reads each
-text box once. Save notices, like "MEMORY CARD slot 1", are read too, so you
-know when the game has written to your card.
+text box once.
+
+Only cutscene text is read this way. On a menu the guide has not been taught it
+stays quiet rather than reading out the flavour text under each option, which
+is what F12 is for. Notices like "MEMORY CARD slot 1" go with the menus: press
+F12 to hear one.
 
 This is the game's own text, taken from the pointer the game itself uses to
 draw it, so nothing has been transcribed and nothing is tied to English.
@@ -242,22 +262,20 @@ indistinguishable from "working, nothing to say":
 - Dragon Library is named but its entries are not read. Ultimate Battle Z, the
   item shop, character select and battle menus are not recognised at all
 - **The scenario descriptions are not read.** The introduction to each Dragon
-  Adventure scenario sits in the game's memory and can be found, but the guide
-  cannot yet tell which one is highlighted — the same missing piece as the
-  event name below
+  Adventure scenario sits in the game's memory and can be found. The guide now
+  knows which scenario is highlighted, so this has become possible; what is
+  left is working out where each description begins
 - **The guide cannot tell when text stops being on screen.** It reads the
   pointer the game uses to draw text, and that pointer keeps its last value
   after a scene ends. Three checks make a wrong read very unlikely, but the
   one situation that has never been captured is a battle with no text box
   showing. If you hear a line that is not on screen, please report it
 - **Battles are not accessible** beyond the game's own audio
-- The **event name** F12 reads on Game Level is **wrong on every event but the
-  first**, and known to be. It is reading the first entry of the game's list of
-  event names rather than the one you picked, so it says "Mysterious Alien
-  Warrior" whatever you are playing. Ignore it for now; the instruction line
-  beside it is correct. Fixing it needs the story event list mapped first
-- If text addresses no longer match, F12 says "no subtitle available" rather
-  than reading nonsense
+- **The event name is not read on Game Level.** F12 used to announce one, and
+  it was the first event's name whatever you had picked — so it has been
+  removed. The instruction line beside it is correct and is still read. Naming
+  the event properly needs the story event list mapped first
+- If the guide cannot find any text, F12 says so rather than reading nonsense
 - Navigation is a playtest of Dragon Adventure, not whole-game accessibility.
   Unfamiliar maps still need wider testing
 - An **ambiguous objective may stay unconfirmed**. The guide says so rather than
@@ -421,6 +439,13 @@ is coherent.
   the label's pixels. Exact on static screens, useless on animated ones.
 - **`labels ADDR`** — walks a menu and saves a picture of each option, so the
   spoken table can be written from what was actually on screen.
+- **`rowscan ADDR... [--capture]`** — for when the candidates are already known
+  and the question is what they *mean*. Reads them at 10 Hz and photographs the
+  screen the moment they settle on a new value, so every row the player passes
+  through is recorded beside a picture of it. Seconds and kilobytes, where
+  `positionscan` costs minutes and 31 MB per press; `--capture` adds the full
+  RAM as well when a new address has to be searched for. It writes `row*` and
+  never touches the `posn*` archive.
 - **`watch ADDR...`** — poll addresses live to see which hold steady.
 - **`recorrelate`** — re-analyse the last capture from disk.
 
@@ -473,6 +498,26 @@ These were learned the hard way and are worth keeping:
 - **Prefer readable evidence to magic numbers.** Screens are identified by
   sprite-name strings the game loads, which can be checked, rather than by a
   state integer that can only be trusted.
+- **A marker's exclusivity is only as good as the route the captures took.**
+  Every capture of a screen outside Dragon Adventure had been taken in a
+  session that never entered it, so "this marker is absent there" was never
+  evidence of anything — and a Dragon Adventure marker that stays resident
+  afterwards took the main menu's name away in play. Check a marker against
+  captures reached the way the player reaches the screen.
+- **A menu of N entries cannot distinguish its cursor from any counter of
+  period N.** A two-entry list shipped an address that was never an index; it
+  fitted six cued presses, three captures and a held-out seventh. Where a menu
+  is short, say so beside the address and re-derive when the list grows.
+- **For a list that grows, look for the list, not just the cursor.** The game
+  has to know which items it is showing, and that array survives insertions
+  where a row number does not — so names hung off it never shift. Search it by
+  *shape*, the shorter list being a subsequence of the longer, and require the
+  region to change between the two.
+- **A search can only find what it asked for.** Three searches concluded no
+  scenario identity existed. All three asked for something that changes as the
+  cursor moves; the answer was an array that does not, so none of them could
+  have found it. When a search comes back empty, check the question before
+  believing the answer.
 
 ## Where to start
 

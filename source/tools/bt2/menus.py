@@ -29,6 +29,22 @@ for by the game's own sprite name inside a narrow band.  Same technique as the
 subtitle search below, and for the same reason: nothing searched for here is a
 line of game text, so none of it is tied to English.
 
+**A marker that outlives its screen loses to one that does not.**  The Dragon
+Adventure markers stay resident after the mode is left, which took the main
+menu's name away and announced "Select Scenario" over the Options screen.  Two
+named markers matching is otherwise reported as "I do not know", by design.
+
+**A list that grows is not indexed by its rows.**  Select Scenario gains
+entries as the player unlocks scenarios, and the game *inserts* them, so a row
+number means something different afterwards.  The game keeps its own record of
+which scenario each row is, and the names hang off that instead -- which is why
+an unlock costs one unnamed row rather than all of them.
+
+**Which of this reader and the story reader speaks** is decided here too, by
+`MenuReader.reads_options`.  Both read prose the game is drawing, and on a menu
+that is the menu's own subtitle, so leaving both running announced flavour text
+for every option the player browsed past and never named the option.
+
 The subtitle addresses were recorded in one PCSX2 run and the block moves
 between runs, so they are treated as a starting guess rather than a fact.  When
 they stop reading as text the block is found again by its shape -- ten lines at

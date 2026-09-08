@@ -106,7 +106,7 @@ The main menu also writes its sprite names into a per-screen table on a `0xC0`
 granule at `0x00CF9800`, and **that block outlives the other one** -- on the
 Dragon Library capture `mc_menu_lineanime` is gone from `0x00AA15EC` and still
 present at `0x00CF9B00`. Five entries there are unique to the main menu across
-all 21 captures on disk:
+all 26 captures on disk:
 
     0x00CF9D40  mc_yaji_down
     0x00CF9E00  mc_yaji_up
@@ -135,8 +135,8 @@ resulting shift, so a lone accidental hit still fails. Rate limited to once
 every 20 seconds and announced as "Looking for the menu.", for the same reason
 the subtitle search is announced.
 
-Checked offline against all 21 captures in `test_menus.py`: the search returns
-0 on both main-menu captures, `None` on the other 19, and finds a synthetic
+Checked offline against all 26 captures in `test_menus.py`: the search returns
+0 on both main-menu captures, `None` on the other 24, and finds a synthetic
 `0x2000` displacement of the whole band.
 
 **Why this was built.** In the three logged sessions where the main menu was
@@ -385,7 +385,7 @@ looks like.
 The list of scenarios, reached from Dragon Adventure before the story events
 and the Game Level chooser. A vertical list that wraps; the highlighted row
 stays centred and the names scroll through it. On this save it now holds
-**three** entries.
+**four** entries, having held two and then three earlier the same day.
 
 - **Marker** -- `mc_da_2_text_off_l` at `0x00D53440`. Known to outlive the
   screen; see below and the screen-identification section.
@@ -404,7 +404,9 @@ Scenario numbers, not row numbers: `0` Saiyan Saga, `1` Tree of Might,
 ### The cursor was wrong, and a two-entry list could not show it
 
 **Measured live 2026-09-07**, at all three rows, each paired with a screenshot
-saved beside the reading (`menu_probe.py rowscan`, `reference/probe/row*.png`):
+saved beside the reading (`menu_probe.py rowscan`). Those three pictures are
+kept at `reference/probe/scenario3/`, since `row*.png` was reused for the
+four-entry scan an hour later:
 
     highlighted        0x00D53625   0x00B0536C   0x00B05370
     Fateful Brothers        1            2            3
@@ -427,13 +429,26 @@ in all three screenshots, since the list wraps and the highlighted row is
 centred: nine facts rather than three. And it agreed with the row on all seven
 two-entry captures, which is a transition it was not derived from.
 
-**There is no cross-check any more, and that is a real loss.** The old one was
-never a second copy of this quantity; it was a different number that a two-row
-list could not tell apart. Finding a genuine second copy needs a ramp search
-over the grown list -- `menu_probe.py positionscan --screen="Select Scenario"`
-with cues, then `fit 1,2,3,1,2,3` from the screenshots -- which costs the
-player a couple of minutes and 31 MB per press. Worth doing before this screen
-is next changed; not done unasked.
+**There is no cross-check any more, and there is no second copy to find.** The
+old one was never a second copy of this quantity; it was a different number
+that a two-row list could not tell apart. Once the four-entry captures existed
+the search could be run offline over all **twelve** scenario captures at once,
+each with its row read off its screenshot, asking for any address that tracks
+the row at any scale or counts up by one per row from any base:
+
+    only 0x00B0536C tracks the row in all twelve captures
+
+Twelve offset-ramps fit the four-entry list on its own and every one fails on
+the two- and three-entry captures. So this screen reads its cursor once, and
+that is measured rather than owed. Scratchpad and VU memory are outside what
+PINE reads here and have not been looked at.
+
+What stands in for the missing copy is the bounds: the row must be inside the
+length at `0x00B05370`, and the scenario number it resolves to must be one
+there is a name for. A drifted read lands out of range or on an unknown number
+and says "name not known" rather than naming the wrong scenario. That cannot
+catch a read landing on a *different valid* row, which is why this screen is
+the first place to look if it ever misbehaves again.
 
 ### The game inserts, it does not append -- twice now
 
@@ -449,15 +464,16 @@ So **extending the table would have been wrong both times**. Appending the new
 name would have renamed scenarios that were already there, confidently and
 silently -- the failure this project treats as worse than silence.
 
-Each table was read off a screenshot of the row it names, and each also has to
-explain the rows drawn above and below, since the list wraps with the
-highlighted row centred: sixteen facts for the four-entry table, not four.
+Every name here was read off a screenshot of the row it names, and each also
+has to explain the rows drawn above and below, since the list wraps with the
+highlighted row centred: sixteen facts for the four-entry list, not four.
 
 Saiyan Saga has stayed first and Fateful Brothers last through all three
-lengths, and both new scenarios arrived second from last. **That is an
-observation, not a rule to name rows by** -- three lengths is exactly the sort
-of pattern that has already misled this project twice, and a wrong name is
-worse than an admitted gap.
+lengths, and both new scenarios arrived second from last. That looked like a
+rule worth *not* relying on, and `0x00B05308` then explained it outright: the
+list is the unlocked scenarios in numerical order, and Fateful Brothers is 21.
+Which is the better lesson -- the pattern was real, and guessing from it would
+still have been wrong the first time a scenario numbered above 21 unlocked.
 
 The names are therefore **not** keyed by row. They are keyed by the scenario
 number the game itself records for each row -- see `0x00B05308` below -- which
@@ -590,17 +606,17 @@ table is only true while the list is what it was when it was written.
 This is the only screen here whose length is not ours to know, and it is the
 one case where an unnamed row means the player has been playing rather than
 that something is broken. So it does not fall silent on one: it says
-**"Scenario 3, name not known."** Silence would be indistinguishable from the
-mod failing, which is the fault this project exists to avoid, and a position is
-honest in a way a guessed name would not be.
+**"Scenario 4 of 5, name not known."** Silence would be indistinguishable from
+the mod failing, which is the fault this project exists to avoid, and a
+position is honest in a way a guessed name would not be.
 
-That announcement is also the **tripwire for the dangerous case**. Growth at the
-end is harmless. **Insertion is not**: a newly unlocked scenario landing above
-"Fateful Brothers" would shift it, and the mod would say the wrong name with
-full confidence and no warning. Nothing in memory distinguishes a position from
-a scenario identity while the list has only two entries in order, so this cannot
-be settled now. Hearing "name not known" means the list has grown and **every
-name on this screen must be re-checked**, not merely extended.
+That announcement was also written as the **tripwire for the dangerous case**:
+a newly unlocked scenario landing above one already named would shift it, and
+the mod would say the wrong name with full confidence. **The tripwire fired,
+twice, and the case was the dangerous one** -- the game inserts. It is no
+longer dangerous, because names hang off `0x00B05308` rather than off the row,
+so hearing "name not known" now means one scenario needs naming rather than
+every name needing re-checking.
 
 Bounded at `MAX_UNNAMED_ROW`: a cursor reading past that is far likelier to be
 a bad read than a menu that long, and inventing a row number out of garbage
@@ -632,7 +648,8 @@ clips.
 
 **These addresses come from a single PCSX2 run** and the block does move between
 runs. Every read is checked for plausible text before being spoken, so a moved
-block produces "no subtitle available" rather than gibberish.
+block falls through to the display pointer rather than producing gibberish --
+and only if that fails too does F12 say it found nothing.
 
 **The block is now found again by its shape.** When a recorded address stops
 reading as text, the mod searches `0x00C00000`-`0x00D00000` in half-megabyte
@@ -792,6 +809,9 @@ is the transition test the two byte candidates failed, passed three times.
 not story text, but genuinely on screen, so the pointer was right and the
 mental model of "story subtitles" is too narrow. Whether a save notice should
 be spoken is a judgement for the player, not a bug to filter away silently.
+**They judged it**, on 2026-09-07: automatic narration is restricted to the
+scene text buffer, which is what keeps unmapped menus quiet, and a save notice
+goes with them and is read on F12 instead. See the scene-buffer rule below.
 
 **It does not move between runs.** The nine screens above come from three
 separate PCSX2 sessions across two days, and `0x008C6244` read correctly in all
@@ -1442,10 +1462,13 @@ interpretable.
   addresses do, and therefore whether any of them could replace `0x00D53440`.
   `python menu_probe.py snap mainmenu_after --full` on the main menu, having
   been inside Dragon Adventure that session, settles it.
-- **Select Scenario has no cross-check.** Its cursor is settled and verified
-  at three rows against screenshots, but the address that used to serve as the
-  second copy turned out to be a different quantity. A ramp search over the
-  grown list would find a genuine one; see that screen's section.
+- **Select Scenario has no cross-check, and none exists to find.** Its cursor
+  is settled and verified at four rows against screenshots; the address that
+  used to serve as the second copy turned out to be a different quantity. A
+  ramp search over all twelve scenario captures found `0x00B0536C` and nothing
+  else. The bounds -- the length, and the scenario number having a name --
+  stand in for it, but they cannot catch a read landing on a different valid
+  row. See that screen's section.
 - **Where a save notice lives while it is on screen** has never been captured,
   so whether automatic narration still reaches one is unknown. See the story
   reader's scene-buffer rule.
@@ -1457,8 +1480,10 @@ interpretable.
   one another the way Title shadowed Game Level. Only the screens with captures
   on disk have been checked, and each new screen needs the same two questions
   asked of it.
-- **The Select Scenario labels are true for the current unlock state only**, and
-  break if a newly unlocked scenario is inserted rather than appended.
+- ~~The Select Scenario labels are true for the current unlock state only.~~
+  **No longer true**: they are keyed by the game's own scenario numbers, so an
+  unlock leaves them alone. What remains is the entry above -- each new
+  scenario's name has to be seen once.
 - The story event list is still unmapped, and it is the screen most likely to
   carry the current-event index. Whether `mc_da_2_text_off_l` or
   `mc_da_5_lv_csr` also match there is unknown -- there is no capture of it --
@@ -1470,9 +1495,15 @@ interpretable.
   no capture exists of a battle with no text box showing, which is the state
   they are meant to catch. If a stray line is ever heard, capture at that
   moment -- it cannot be manufactured offline.
-- The **scenario synopses** are resident and readable but not spoken: the game
-  renders them from a computed offset with no display copy, so they need the
-  current-scenario index. Same missing piece as the event name.
+- The **scenario synopses** are resident and readable but not spoken. They
+  needed the current-scenario index, and **that is no longer missing**:
+  `0x00B05308` gives the highlighted row's scenario number. What is still
+  unknown is how a scenario number indexes the pool -- 26 scenarios share 123
+  boxes across `0x00D1E3C0`-`0x00D24D40`, so it is not a fixed stride and the
+  pool has to be walked, as the event-name table does. Every Dragon Adventure
+  capture on disk has the pool resident, so this can be worked out offline.
+  Note this would give a *description* of a scenario whose name is unknown,
+  which is the nearest thing to naming one automatically.
 - The subtitle block is relocated by shape, but only within
   `0x00C00000`-`0x00D00000`. If it ever lands outside that band the search
   misses it. Widening the band costs emulator time, so it should wait until a
