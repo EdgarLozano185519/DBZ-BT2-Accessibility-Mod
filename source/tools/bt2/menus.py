@@ -165,7 +165,7 @@ class Screen:
                  alternate=None, search_band=None,
                  marker_outlives_screen=False, count_address=None,
                  unknown_row_with_count=None, id_array=None, id_stride=4,
-                 labels_by_id=None):
+                 labels_by_id=None, name_pointers=()):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -205,6 +205,16 @@ class Screen:
         self.id_stride = id_stride
         # Names keyed by that answer rather than by row, so they survive.
         self.labels_by_id = labels_by_id or {}
+        # Where the highlighted entry's name is read from the text the game
+        # is drawing rather than from a cursor and a table of labels: a tuple
+        # of (pointer address, spoken prefix or None), one per slot the screen
+        # draws. The character select is the one screen so far: its names are
+        # in the game's own table, the first pointer followed player 1's
+        # highlight through every capture taken, and no cursor was needed.
+        # Nothing is transcribed and nothing is tied to English. The prefix is
+        # said the first time a different slot changes, so a player who has
+        # moved from one panel to the other hears which one is speaking.
+        self.name_pointers = tuple(name_pointers)
         # The recorded marker, which sits beside the cursor.
         self.primary = Signature([(marker_address, marker)], near_cursor=True)
         # Evidence from a second allocation, which outlives the first. It names
@@ -223,7 +233,13 @@ class Screen:
 
     @property
     def readable(self) -> bool:
-        return self.cursor is not None
+        return self.cursor is not None or bool(self.name_pointers)
+
+    def displayed_names(self, pine) -> tuple[str | None, ...]:
+        """The name each draw pointer aims at, or None where it is not text."""
+        from . import story
+        return tuple(story.displayed(pine, address)[0]
+                     for address, _ in self.name_pointers)
 
     def present(self, pine, shift: int = 0) -> bool:
         if self.primary.present(pine, shift):
@@ -470,7 +486,10 @@ SCREENS = [
                0x53, 0x53]),
         0x00533A73, 2, {0: "New Game", 1: "Load Game"},
         # This signature also matches on the Game Level screen, where it
-        # announced "New Game" over a difficulty chooser. It is a last resort.
+        # announced "New Game" over a difficulty chooser, and on both
+        # character selects, one of them intermittently. It is a last resort,
+        # and since 2026-09-08 it is also refused whenever the game is drawing
+        # text -- see MenuReader._text_on_screen.
         weak_marker=True,
     ),
     # Recognised but not mapped. Naming the screen helps; guessing at its rows
@@ -491,6 +510,54 @@ SCREENS = [
         mirror=0x00532173, mirror_stride=2,
     ),
     Screen("Dragon Library", 0x00AB1FAF, b"mc_musicprogram_0"),
+    # The two-player character select, reached from the battle modes. Two
+    # horizontal rows of portraits, player 1 above and player 2 below, with
+    # each player's highlighted name drawn as text between them.
+    #
+    # Added 2026-09-08. The marker is the scroll arrow sprite this screen
+    # loads into the dynamic region; the name occurs in no other capture on
+    # disk, and the reverse holds too -- no other screen's named marker matches
+    # here, only the title screen's raw signature, which this named marker
+    # outranks. Before this entry the mod announced "New Game" over the
+    # character grid.
+    #
+    # There is no cursor address, and none is needed. The names the screen
+    # shows are in the game's own table -- 135 UTF-16 entries on a 0x40 stride,
+    # at 0x00D61C00 in these captures -- and the pointer at story.DISPLAY_POINTER
+    # aimed at player 1's highlighted name in all eight captures: one taken
+    # before the cued scan and seven during it, across both axes of the grid,
+    # each checked against its screenshot. A search for the highlighted index
+    # itself found no byte-sized ramp in those captures, and did not need to.
+    #
+    # Player 2's name is drawn by a second structure of the same shape, 0x98
+    # bytes after the first. The first pointer stayed on Goku after player 1
+    # had confirmed and the cursor had moved to the lower row, which is why
+    # player 2's row was silent in play on 2026-09-08: it never follows
+    # player 2. The second was found from captures in which player 2 had
+    # never moved, and then verified on a second cued scan of seven presses
+    # across both axes of player 2's grid -- Teen Gohan, Gohan, Teen Gohan,
+    # Chiaotzu, Trunks (Sword), Piccolo, Gohan, each read off its screenshot
+    # -- while the first stayed on Goku throughout. Whether this marker
+    # survives leaving the screen is unmeasured; no capture was taken by that
+    # route.
+    Screen("Character Select", 0x009CE8D4, b"mc_chara_select_yazurushi_up",
+           name_pointers=((0x008C6244, None), (0x008C62DC, "Player 2"))),
+    # Dragon Tournament's entry screen, added 2026-09-08 after it was silent
+    # in play: the same strip of portraits along the top, one name panel, and
+    # a grid of eight entrant slots. The game loads the same arrow sprite but
+    # at a different address in this mode, 0xA37E above Dueling's, so the
+    # Dueling marker does not match here and this one does not match there --
+    # checked across all 44 captures on disk. One visit only, so far.
+    #
+    # One name pointer, not two: the second draw slot holds unrelated menu
+    # text here ("Return to Character Select" in the capture), and reading it
+    # would have announced that as a player 2 who does not exist. Before this
+    # entry the mod flickered between "Unknown screen" and "New Game" on this
+    # grid; see the weak-marker rule in MenuReader._detect for the second
+    # half of that.
+    Screen("Tournament Character Select", 0x009D8C52,
+           b"mc_chara_select_yazurushi_up",
+           name_pointers=((0x008C6244, None),)),
     # The Game Level screen, reached after choosing a story event in Dragon
     # Adventure. Three boxes side by side reading 1, 2, and 3, arranged
     # horizontally, so it answers to Left and Right rather than Up and Down.
@@ -705,8 +772,10 @@ class MenuReader:
         # left alone until the block it lives in has been found.
         self.cursor_trusted = False
         self._spoken: str | None = None
-        self._pending: int | None = None
-        self._settled: int | None = None
+        self._pending = None
+        self._settled = None
+        # Which draw slot spoke last, on a screen that reads several.
+        self._last_slot = 0
         self._unknown_since: float | None = None
         self._announced_unknown = False
         # The story reader, so a line read out on F12 is not repeated by it a
@@ -868,9 +937,34 @@ class MenuReader:
             return None, False
 
         weak = [s for s in SCREENS if s.weak_marker and s.present(pine)]
-        if len(weak) == 1:
+        if len(weak) == 1 and not self._text_on_screen(pine):
             return weak[0], True
         return None, False
+
+    @staticmethod
+    def _text_on_screen(pine) -> bool:
+        """Is the game drawing readable text through its display pointer?
+
+        The title screen's raw signature is the only weak marker, and it has
+        now been caught naming three screens that were not the title: the
+        Game Level chooser, the Dueling character select, and -- flickering
+        on and off, 2026-09-08 -- the Dragon Tournament entry screen, where
+        the guide said "New Game" four times over a grid of fighters.  Every
+        one of those screens draws text through the display pointer.  The
+        title screen does not: on its capture the pointer aims at bytes that
+        are not text.  Measured over all 44 captures on disk, the signature
+        with no text on screen occurs on the title capture and nowhere else.
+
+        So a weak marker is refused while text is on screen.  If the title
+        screen ever draws a line, the cost is "Unknown screen" there, which is
+        the safe direction; the cost of the old rule was a confident wrong
+        name, which is the one this project does not pay.
+        """
+        from . import story
+        try:
+            return story.displayed(pine)[0] is not None
+        except Exception:
+            return False
 
     def poll(self, pine, now: float) -> None:
         # Read the key first, and on every pass. It used to be read below the
@@ -922,6 +1016,10 @@ class MenuReader:
         if not self.reads_options():
             return
 
+        if self.screen.name_pointers:
+            self._speak_displayed_names(pine)
+            return
+
         try:
             raw, label, settled = self.screen.option(
                 pine, self._shifts.get(self.screen.name, 0)
@@ -960,6 +1058,51 @@ class MenuReader:
         if label != self._spoken:
             self._spoken = label
             self.speaker.say(label)
+
+    def _speak_displayed_names(self, pine) -> None:
+        """Say the name the game is drawing for whichever slot just changed.
+
+        Same discipline as a cursor: the names must read the same twice before
+        they are trusted, and only a change is spoken.  The pointers are of the
+        kind the story reader and F12 use, so a refusal there -- bytes that are
+        not text, a stale pointer at a move list -- is a refusal here too.
+
+        On arrival only the first slot is spoken, which on the character
+        select is player 1's highlight.  After that, each slot speaks when its
+        own text changes, with its prefix the first time the change comes from
+        a slot other than the one that spoke last.
+        """
+        try:
+            names = self.screen.displayed_names(pine)
+        except Exception:
+            return
+        if all(name is None for name in names):
+            self._pending = None
+            return
+        if names != self._pending:
+            self._pending = names
+            return
+        if names == self._settled:
+            return
+        previous = self._settled
+        self._settled = names
+        if previous is None:
+            first = names[0]
+            if first is not None and first != self._spoken:
+                self._spoken = first
+                self._last_slot = 0
+                self.speaker.say(first)
+            return
+        for slot, (name, (_, prefix)) in enumerate(
+                zip(names, self.screen.name_pointers)):
+            if name is None or name == previous[slot]:
+                continue
+            line = name
+            if prefix and slot != self._last_slot:
+                line = f"{prefix}: {name}"
+            self._last_slot = slot
+            self._spoken = name
+            self.speaker.say(line)
 
     def _report_disagreement(self, pine) -> None:
         """Explain a cursor whose two copies will not agree, once.

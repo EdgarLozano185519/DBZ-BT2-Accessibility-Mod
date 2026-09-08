@@ -31,6 +31,18 @@ from .speech import note
 # address in 31 MB whose value tracked the text box.
 DISPLAY_POINTER = 0x008C6244
 
+# A second draw structure of the same shape, 0x98 bytes after the first. On the
+# character select it holds player 2's highlighted name while the first holds
+# player 1's -- the position halfwords say so, 231 against 281 on the same row
+# -- and it is the reason player 2 was silent after player 1 had confirmed:
+# the first pointer stayed on player 1's choice. Elsewhere it is stale or
+# empty (zero on the main menu, a character name during a cutscene), so only
+# a screen that names it reads it. Found 2026-09-08 by searching every
+# character-select capture for words that point into the name table: there
+# were exactly two, this and DISPLAY_POINTER. Verified the same day on seven
+# cued presses of player 2's cursor that it had not been derived from.
+SECOND_DISPLAY_POINTER = 0x008C62DC
+
 # EE main RAM. A pointer outside this is stale or uninitialised, never text.
 RAM_START = 0x00100000
 RAM_END = 0x02000000
@@ -83,6 +95,15 @@ MARKUP = re.compile(r"(?:^|\n)[#$%]")
 PUNCTUATION_START = " "
 PUNCTUATION_END = "⁯"
 
+# Two glyphs the character select draws after some names and nowhere else:
+# U+00AE after Goku, Teen Gohan, Krillin, Vegeta and Frieza, U+3327 after
+# Piccolo, Tien, Raditz, Nappa and the Androids, among others. The game's
+# font renders them as a circled R and a TM. What they mean is unrecorded --
+# read off the game's own name table on 2026-09-08, not off any documentation
+# -- so a trailing one is dropped rather than spoken, and the name is said as
+# the screen shows it without its badge. No story box on the disc uses either.
+NAME_GLYPHS = "\u00ae\u3327"
+
 
 def _readable(text: str) -> bool:
     """Is this a line of prose rather than a coincidence of bytes?
@@ -126,7 +147,8 @@ def read_displayed(pine) -> str | None:
     return displayed(pine)[0]
 
 
-def displayed(pine) -> tuple[str | None, int | None]:
+def displayed(pine, pointer_address: int = DISPLAY_POINTER
+              ) -> tuple[str | None, int | None]:
     """The prose on screen, and the address it was read from.
 
     The address is what separates a scene from a menu -- see SCENE_TEXT_START
@@ -135,7 +157,7 @@ def displayed(pine) -> tuple[str | None, int | None]:
     where a refusal came from is what makes the band checkable later.
     """
     try:
-        pointer = pine.read32(DISPLAY_POINTER)
+        pointer = pine.read32(pointer_address)
     except Exception:
         return None, None
     if not RAM_START <= pointer < RAM_END - READ_BYTES:
@@ -158,6 +180,11 @@ def displayed(pine) -> tuple[str | None, int | None]:
         text = raw[:end].decode("utf-16-le")
     except ValueError:
         return None, pointer
+    # Only a badge at the very end is dropped. The same glyph in the middle
+    # of a line is not a name plate, and one such line has been caught during
+    # a battle -- see test_story.py -- so it stays refused.
+    if text and text[-1] in NAME_GLYPHS:
+        text = text[:-1]
     if not _readable(text) or MARKUP.search(text):
         return None, pointer
     spoken = " ".join(text.split())

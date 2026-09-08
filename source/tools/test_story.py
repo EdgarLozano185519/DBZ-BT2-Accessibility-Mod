@@ -190,6 +190,13 @@ def test_refusals() -> None:
     check("fullwidth move-list glyphs are refused",
           story.read_displayed(fake_ram("Kamehameha Ｌ２＋△"))
           is None)
+    # The character select draws a badge after some names -- the game's own
+    # name table has "Goku ®" and "Tien ㌧". Only a badge at the end
+    # is dropped; the same glyph inside a line stays refused, as above.
+    check("a name badge at the end is dropped",
+          story.read_displayed(fake_ram("Goku ®")) == "Goku")
+    check("the other name badge is dropped too",
+          story.read_displayed(fake_ram("Tien ㌧")) == "Tien")
 
 
 def test_accepts() -> None:

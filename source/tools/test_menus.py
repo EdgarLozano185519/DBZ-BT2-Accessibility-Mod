@@ -45,6 +45,23 @@ CAPTURES = {
     "posn4": "Select Scenario",
     "posn5": "Select Scenario",
     "pos0": "Title",
+    "charsel0": "Character Select",
+    "csel0": "Character Select",
+    "csel1": "Character Select",
+    "csel2": "Character Select",
+    "csel3": "Character Select",
+    "csel4": "Character Select",
+    "csel5": "Character Select",
+    "csel6": "Character Select",
+    "csel_p2": "Character Select",
+    "csel20": "Character Select",
+    "csel21": "Character Select",
+    "csel22": "Character Select",
+    "csel23": "Character Select",
+    "csel24": "Character Select",
+    "csel25": "Character Select",
+    "csel26": "Character Select",
+    "tourn0": "Tournament Character Select",
     # The scenario list at each of its four rows, once a fourth unlocked.
     "row0": "Select Scenario",
     "row1": "Select Scenario",
@@ -67,6 +84,8 @@ PROSE = {
               "You can always adjust it later!"),
     "events0": "What's wrong? Have you lost your nerve?",
     "posn0": "Man, I'm hungry...",
+    # The character select draws a glyph after this name; F12 says the name.
+    "charsel0": "Goku",
     "cut0": "I guess your little pet monsters weren't as strong as you thought.",
 }
 
@@ -739,6 +758,174 @@ def test_a_newly_unlocked_scenario_costs_one_row() -> None:
           sum("not known" in want for want in expected) == 1)
 
 
+# Player 1's highlighted character in each character-select capture, read
+# off the screenshot beside it. charsel0 was taken before the cued scan and
+# the seven csel captures during it, across both axes of the grid.
+CHARACTERS = {
+    "charsel0": "Goku",
+    "csel0": "Kid Gohan",
+    "csel1": "Teen Gohan",
+    "csel2": "Kid Gohan",
+    "csel3": "Tien",
+    "csel4": "Chiaotzu",
+    "csel5": "Teen Gohan",
+    "csel6": "Kid Gohan",
+    # Player 1 confirmed on Goku, the cursor on player 2's row.
+    "csel_p2": "Goku",
+}
+
+# Player 2's highlighted character in the same captures. It was never moved
+# during the first scan, so every one of those shows Kid Gohan.
+PLAYER_TWO = "Kid Gohan"
+
+# The second cued scan, with player 1 confirmed on Goku and the cursor on
+# player 2's grid: Right, Right, Left, Down, Right, Up, Left. Player 2's
+# pointer was found from captures in which player 2 had never moved, so these
+# seven are the transitions it was not derived from. Read off the screenshots.
+PLAYER_TWO_MOVED = {
+    "csel20": "Teen Gohan",
+    "csel21": "Gohan",
+    "csel22": "Teen Gohan",
+    "csel23": "Chiaotzu",
+    "csel24": "Trunks (Sword)",
+    "csel25": "Piccolo",
+    "csel26": "Gohan",
+}
+
+
+class RepointedPine:
+    """A capture with one 32-bit word replaced, to move a draw pointer."""
+
+    def __init__(self, inner, address: int, value: int):
+        self.inner = inner
+        self.address = address
+        self.value = value
+
+    def read8(self, address: int) -> int:
+        return self.inner.read8(address)
+
+    def read32(self, address: int) -> int:
+        if address == self.address:
+            return self.value
+        return self.inner.read32(address)
+
+    def read_aligned_range(self, address: int, size: int, allow_large=False):
+        return self.inner.read_aligned_range(address, size, allow_large)
+
+
+class ErasedPine(CapturePine):
+    """A capture with one region zeroed, as if a sprite name were gone."""
+
+    def __init__(self, inner: CapturePine, address: int, size: int):
+        data = bytearray(inner.data)
+        start = address - inner.base
+        data[start:start + size] = bytes(size)
+        super().__init__(bytes(data), inner.base)
+
+
+def test_the_weak_marker_needs_a_silent_screen() -> None:
+    """The title's raw signature is refused while the game draws text."""
+    print("\nThe weak marker:")
+    title = next(s for s in menus.SCREENS if s.name == "Title")
+    pos0 = load("pos0")
+    if pos0 is not None:
+        check("the title capture has no text on screen",
+              not menus.MenuReader._text_on_screen(pos0))
+        check("so the title screen is still named",
+              reader()._detect(pos0)[0] is title)
+    # Every capture where the signature matched beside text: with that
+    # screen's own marker erased, the old rule would have said "New Game".
+    for name, expected in CAPTURES.items():
+        pine = load(name)
+        if pine is None or expected in (None, "Title"):
+            continue
+        if not title.present(pine):
+            continue
+        own = next(s for s in menus.SCREENS if s.name == expected)
+        erased = ErasedPine(pine, own.marker_address, len(own.marker))
+        found, _ = reader()._detect(erased)
+        check(f"{name} without its marker is not called Title",
+              found is not title, f"got {found.name if found else None!r}")
+
+
+def test_player_two() -> None:
+    """Player 2's slot speaks when its own pointer moves, with its prefix once."""
+    print("\nPlayer 2:")
+    screen = next(s for s in menus.SCREENS if s.name == "Character Select")
+    pine = load("csel_p2")
+    if pine is None:
+        check("csel_p2 present", False, "capture missing")
+        return
+    names = screen.displayed_names(pine)
+    check("both slots read on the player 2 capture",
+          names == ("Goku", PLAYER_TWO), f"read {names}")
+    for name in CHARACTERS:
+        other = load(name)
+        if other is not None:
+            got = screen.displayed_names(other)[1]
+            check(f"{name}: player 2 reads {PLAYER_TWO!r}", got == PLAYER_TWO,
+                  f"read {got!r}")
+    for name, want in PLAYER_TWO_MOVED.items():
+        other = load(name)
+        if other is None:
+            check(f"{name} present", False, "capture missing")
+            continue
+        got = screen.displayed_names(other)
+        check(f"{name}: player 1 still Goku, player 2 {want!r}",
+              got == ("Goku", want), f"read {got}")
+
+    # Move player 2's pointer to Tien, then Chiaotzu, then move player 1.
+    tien, chiaotzu, goku = 0x00D61EC0, 0x00D61F00, 0x00D61C00
+    menu = reader()
+    for tick in range(4):
+        menu.poll(pine, tick * 0.1)
+    moved = RepointedPine(pine, story.SECOND_DISPLAY_POINTER, tien)
+    for tick in range(3):
+        menu.poll(moved, 1 + tick * 0.1)
+    moved = RepointedPine(pine, story.SECOND_DISPLAY_POINTER, chiaotzu)
+    for tick in range(3):
+        menu.poll(moved, 2 + tick * 0.1)
+    both = RepointedPine(
+        RepointedPine(pine, story.SECOND_DISPLAY_POINTER, chiaotzu),
+        story.DISPLAY_POINTER, goku + 0x40 * 4)          # Kid Gohan
+    for tick in range(3):
+        menu.poll(both, 3 + tick * 0.1)
+    said = menu.speaker.said
+    check("player 2 is prefixed once, then bare, then player 1 is bare",
+          said == ["Character Select", "Goku", "Player 2: Tien", "Chiaotzu",
+                   "Kid Gohan"],
+          f"said {said}")
+
+
+# The Dragon Tournament entry screen, one visit: Yamcha highlighted, and the
+# second draw slot holding a menu line that must not be spoken as a player.
+TOURNAMENT = {"tourn0": "Yamcha"}
+
+
+def test_character_select_names() -> None:
+    """The highlighted character is read from the game's own text."""
+    print("\nCharacter Select:")
+    expected = [(n, "Character Select", w) for n, w in CHARACTERS.items()]
+    expected += [(n, "Tournament Character Select", w)
+                 for n, w in TOURNAMENT.items()]
+    for name, screen_name, want in expected:
+        pine = load(name)
+        if pine is None:
+            check(f"{name} present", False, "capture missing")
+            continue
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        said = menu.speaker.said
+        check(f"{name} says {want!r}", said == [screen_name, want],
+              f"said {said}")
+        told = story.StoryReader(Recorder())
+        told.poll(pine)
+        told.poll(pine)
+        check(f"{name}: the story reader stays quiet", told.speaker.said == [],
+              f"said {told.speaker.said}")
+
+
 def test_a_moved_block() -> None:
     """A menu whose own block has moved is still named, and found again.
 
@@ -816,6 +1003,9 @@ def main() -> int:
     test_the_five_entry_list()
     test_the_names_match_the_game_s_own_table()
     test_a_newly_unlocked_scenario_costs_one_row()
+    test_character_select_names()
+    test_player_two()
+    test_the_weak_marker_needs_a_silent_screen()
     test_a_moved_block()
     test_unmoved_captures_are_not_searched()
 

@@ -964,6 +964,13 @@ def check() -> int:
             except Exception as error:
                 far = f"error: {error}"
             note = "  (raw signature, weak)" if screen.weak_marker else ""
+            if screen.weak_marker and near == "MATCH":
+                try:
+                    from bt2.menus import MenuReader
+                    if MenuReader._text_on_screen(client):
+                        note += "  REFUSED: text is on screen"
+                except Exception:
+                    pass
             note += "  (flagged as inside Adventure)" if screen.in_adventure else ""
             second = "" if screen.alternate is None else f"   second signature {far}"
             print(f"  {screen.name:<16} {near}{second}{note}")
@@ -979,7 +986,12 @@ def check() -> int:
                 print("  its own block was NOT found in the search band")
             else:
                 print(f"  its own block has moved by {shift:+#x}")
-        if found is not None and found.readable and trusted:
+        if found is not None and found.name_pointers and trusted:
+            for (address, prefix), name in zip(found.name_pointers,
+                                               found.displayed_names(client)):
+                print(f"name:     {name!r} through 0x{address:08X}"
+                      + (f" ({prefix})" if prefix else ""))
+        elif found is not None and found.readable and trusted:
             raw, label, settled = found.option(client)
             print(f"cursor:   raw {raw} -> {label!r}" +
                   ("" if settled else "   MIRRORS DISAGREE, would stay silent"))
@@ -1008,7 +1020,7 @@ def check() -> int:
 
 
 def positionscan(screen_name: str, cues: list[str], lead: int = 20,
-                 settle: float = 4.0) -> int:
+                 settle: float = 4.0, prefix: str = "posn") -> int:
     """Capture RAM and screen after each cued key press.
 
     The press scan assumes a menu that wraps and answers to one repeated key.
@@ -1048,24 +1060,24 @@ def positionscan(screen_name: str, cues: list[str], lead: int = 20,
             if not screen.present(client):
                 voice.say("Screen changed. Stopping.")
                 break
-            vision.capture_game_window().save(STORE / f"posn{index}.png")
+            vision.capture_game_window().save(STORE / f"{prefix}{index}.png")
             chunks = []
             for address in range(DEFAULT_BASE, FULL_END, CHUNK_BYTES):
                 size = min(CHUNK_BYTES, FULL_END - address)
                 chunks.append(client.read_aligned_range(address, size,
                                                         allow_large=True))
                 time.sleep(CHUNK_PAUSE)
-            (STORE / f"posn{index}.bin").write_bytes(b"".join(chunks))
+            (STORE / f"{prefix}{index}.bin").write_bytes(b"".join(chunks))
             kept += 1
-            print(f"  posn{index}: after {cue}")
+            print(f"  {prefix}{index}: after {cue}")
         voice.say("Capture finished.")
     finally:
         client.close()
         voice.close()
-    (STORE / "posn_cues.txt").write_text(",".join(cues[:kept]), encoding="utf-8")
+    (STORE / f"{prefix}_cues.txt").write_text(",".join(cues[:kept]), encoding="utf-8")
     print(f"\n{kept} captures in {STORE}.")
-    print("Read each posn*.png to see which entry is highlighted, then:")
-    print("    python menu_probe.py fit 2,1,2,3,2,1")
+    print(f"Read each {prefix}*.png to see which entry is highlighted, then:")
+    print(f"    python menu_probe.py fit 2,1,2,3,2,1 --prefix={prefix}")
     return 0
 
 
@@ -1244,7 +1256,7 @@ def main(argv: list[str]) -> int:
                 span = float(argument.split("=", 1)[1])
         return dryrun(span)
     if command == "positionscan":
-        target, cues, lead = "Main Menu", ["Left", "Right"], 20
+        target, cues, lead, prefix = "Main Menu", ["Left", "Right"], 20, "posn"
         for argument in argv[2:]:
             if argument.startswith("--screen="):
                 target = argument.split("=", 1)[1]
@@ -1252,12 +1264,21 @@ def main(argv: list[str]) -> int:
                 cues = [c.strip() for c in argument.split("=", 1)[1].split(",")]
             elif argument.startswith("--lead="):
                 lead = int(argument.split("=", 1)[1])
-        return positionscan(target, cues, lead)
+            elif argument.startswith("--prefix="):
+                # The posn* files are the Select Scenario archive that
+                # test_menus.py checks; a new screen's captures need a name
+                # of their own or they overwrite the evidence for an old one.
+                prefix = argument.split("=", 1)[1]
+        return positionscan(target, cues, lead, prefix=prefix)
     if command == "fit":
         if len(argv) < 3:
             print("Usage: fit 2,1,2,3,2,1   (positions read off the screenshots)")
             return 1
-        return fit([int(v) for v in argv[2].split(",")])
+        prefix = "posn"
+        for argument in argv[3:]:
+            if argument.startswith("--prefix="):
+                prefix = argument.split("=", 1)[1]
+        return fit([int(v) for v in argv[2].split(",")], prefix=prefix)
     if command == "recorrelate":
         return recorrelate()
     if command == "rowscan":
