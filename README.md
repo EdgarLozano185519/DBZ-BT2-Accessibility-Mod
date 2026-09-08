@@ -76,8 +76,7 @@ automatically. **NVDA is not bundled** — install it yourself if you want it.
 
 ## What it does today
 
-**Menus speak.** Moving the cursor announces the highlighted option on:
-
+**Menus speak.** Moving the cursor announces the highlighted option on following menus:
 - the **title screen** — New Game, Load Game
 - the **main menu** — all ten options
 - **Options** — Save and Load, Controller, Screen, Sound, Exit
@@ -111,7 +110,6 @@ copies of the cursor, both are read, and if they ever disagree it says so and
 leaves the row unnamed rather than naming the wrong option.
 
 A few things you may hear it say, and what they mean:
-
 - **"Unknown screen."** — it does not recognise where you are, so it will not
   guess. F12 still reads whatever is written there
 - **"Looking for the subtitles."** or **"Looking for the menu."** — the game
@@ -169,7 +167,6 @@ may stop it working.
 stereo left and right mean west and east — which only helps if you can see
 which way you are pointing. G reads your actual heading out of the game and
 answers in your own terms: "map point 4, hard right, 1691 units."
-
 It answers every time it is pressed, whether or not the story objective has
 been worked out. If your position cannot be read it says so; if it can read
 your position but not your heading it gives the compass bearing and says that
@@ -197,18 +194,15 @@ entry in the map's coordinate table, so turning it into somewhere teleport can
 write needs the minimap-to-world scale. That scale is normally learned from
 flying, which is the one thing this mod cannot ask for. C learns it from
 teleporting instead.
-
 Press **C** on the world map. It makes six short hops and puts you back exactly
 where you started, and it tells you what to do at each step: pause PCSX2, wait
 for "Moved", unpause, and again. Press C at any point to stop; it takes you home
 before it does. The scale is saved per map, so it is a one-time cost.
-
 It will not start if it has nowhere safe to hop — off the edge of the map, or
 onto another destination. Standing on a destination yourself is fine: that is
 where teleporting leaves you, and the hops go around it. If it refuses it says
 which of the two got in the way, and teleporting somewhere else and pressing C
 again usually settles it.
-
 If it cannot tell the arrow from the map's clouds it says that too, and learns
 nothing, rather than saving a scale it is not sure of.
 
@@ -223,10 +217,8 @@ is what works — press **N** or **B** through the numbered points, **G** to hea
 how far each is, teleport to each in turn and try the action button until one
 of them is the event. It is trial and error, and there are usually fewer than
 ten places to try.
-
 Both need no flying, which is the point: they exist because moving accurately
 without seeing the screen is the part that does not work.
-
 **It tells you when the map changes under it.** If the destinations are
 rearranged — finishing a story event does this — it says "Destinations
 changed" and describes the new set. If it has to use a map's destinations
