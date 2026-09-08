@@ -395,9 +395,11 @@ stays centred and the names scroll through it. On this save it now holds
   the day this screen was mapped. `0x00D53634` carries a value related to it,
   also useless.
 
-- `0` Saiyan Saga, `1` Tree of Might, `2` Lord Slug, `3` Fateful Brothers --
-  **for a list of four**. See the unlock section below: these names are true
-  for one list length only, and there are separate tables for two and three.
+- `0x00B05308` (bytes, stride 4) -- **which scenarios the list is showing**,
+  one per row, in row order. This is what the names are keyed by; see below.
+
+Scenario numbers, not row numbers: `0` Saiyan Saga, `1` Tree of Might,
+`2` Lord Slug, `21` Fateful Brothers.
 
 ### The cursor was wrong, and a two-entry list could not show it
 
@@ -457,54 +459,75 @@ observation, not a rule to name rows by** -- three lengths is exactly the sort
 of pattern that has already misled this project twice, and a wrong name is
 worse than an admitted gap.
 
-The names are therefore keyed by how long the list is, and `0x00B05370` reads
-that length: 2 on all seven two-entry captures, 3 on all three rows of the
-three-entry list. A length with **no table of its own yields no names at all**,
-and the row says its position instead -- "Scenario 2 of 4, name not known." A
-length outside 1 to `MAX_UNNAMED_ROW` is treated as a screen still loading and
-read again rather than acted on.
+The names are therefore **not** keyed by row. They are keyed by the scenario
+number the game itself records for each row -- see `0x00B05308` below -- which
+does not move when the list grows. `0x00B05370` reads the length (2 on all
+seven two-entry captures, 3 on the three-entry list, 4 on the four-entry one)
+and bounds the array read; a length outside 1 to `MAX_UNNAMED_ROW`, or a row
+past the end of it, is treated as a screen still loading and read again rather
+than acted on.
 
-### No canonical scenario identity exists -- three searches, all negative
+### 0x00B05308 -- which scenarios the list is showing
 
-Searched 2026-09-07, once four scenarios and their captures were available.
-The prize would have been permanent: an identity that survives insertion means
-a name learned once stays right for ever, and it is also the missing index that
-would unlock the 26 scenario synopses. It is not there.
+**Found 2026-09-07**, and it is what makes this screen maintainable: an array
+of scenario numbers, one per row on a four-byte stride, in the order the rows
+appear.
 
-The test is sharp because Fateful Brothers has been row 1 of two, row 2 of
-three and row 3 of four. An identity reads the same in all of them; a row index
-cannot.
+    two entries    [0, 21]
+    three entries  [0, 1, 21]
+    four entries   [0, 1, 2, 21]
 
-- **No byte.** 99 addresses are steady per row and differ between rows; 87
-  survive Saiyan Saga; **none** survives Fateful Brothers across the three
-  lengths.
-- **No 16-bit value**, at either alignment.
-- **Eight 32-bit survivors, all spurious.** They are two small fields read
-  together -- one alternating, one reading 0, 0, 0x40, 0x80 over the four
-  scenarios -- so Saiyan Saga and Tree of Might already share the second field.
-  Four values from a two-field code is arithmetic, not identity, and it would
-  collide at the fifth scenario. Rejected on that ground rather than on taste.
-- **No unlocked-set bitmask**: nothing of any width holds exactly two, three
-  and four set bits across the three states while staying steady as the cursor
-  moves. **And no flag array**: no run of 32 bytes holding only 0 or 1 has two,
-  three then four of them set.
+    0  Saiyan Saga        1  Tree of Might
+    2  Lord Slug         21  Fateful Brothers
 
-The 15 single-byte near-misses are in graphics buffers and cannot encode 26
-scenarios; with 31 million addresses and a filter this loose they are what
-chance produces.
+It sits in the same allocation as the cursor and the length, a hundred bytes
+below them.
 
-**What this costs**: a table per list length, re-derived at each unlock. What
-makes that tolerable is `menu_probe.py rowscan`, which turns it into about a
-minute with the player only pressing Down. **What would settle it for good**:
-the next unlock. Re-run the searches with a five-entry list and the two-field
-32-bit candidates above should collide, which would close the question rather
-than leave it open.
+**Why the list grows the way it does** falls straight out of this: the list is
+the unlocked scenarios in numerical order, and 21 sorts after 0, 1 and 2. So
+Fateful Brothers keeps being pushed to the end and each new scenario arrives
+before it. What looked like an arbitrary insertion rule is just a sort.
 
-Hearing "name not known" is the signal that the list has grown again and every
-name on this screen must be **re-derived, not extended**: run `menu_probe.py
-rowscan D53625 B0536C B05370` on the grown list, read the rows off the
-screenshots it saves, and write a new table for that length. Keeping the old
-tables costs nothing and keeps the older captures meaningful.
+**Verified against all twelve captures with a screenshot beside them**, across
+three list lengths and several PCSX2 sessions: in every one, the number at the
+highlighted row names the scenario in the picture. The array also reads
+identically at every row of the same list, as a list's contents must, and it
+was read back live afterwards.
+
+**What it buys.** Names are keyed by scenario number instead of row, so they no
+longer shift when the list grows. **An unlock costs one unnamed row rather than
+all of them**, and adding that name is one line here rather than a re-derived
+table. The row is still bounded by the length at `0x00B05370`, and a number
+with no name still says "Scenario 4 of 5, name not known."
+
+### The three searches that missed it, and why
+
+Before this was found, three searches were run for a scenario identity and all
+came back negative -- no byte, no 16-bit value, no unlocked-set bitmask, no
+flag array. **That negative was recorded here as settled, and it was wrong.**
+Worth understanding, because the mistake is reusable.
+
+Every one of those searches asked for something that *changes as the cursor
+moves* and is steady per scenario. The array does not change as the cursor
+moves -- it is the list, not the selection -- so no amount of that kind of
+search could ever have found it. The filters were sound; the question was.
+
+What found it was asking about **shape** instead of value: an array whose
+contents at two entries are a subsequence of its contents at three, and those a
+subsequence of four. That is a much stronger constraint than any single number
+can carry, and it returned one credible answer where the value searches had
+returned either nothing or dozens of coincidences.
+
+One trap on the way, worth repeating: the first version of the subsequence
+search matched five million regions, because a prefix is always a subsequence
+and most of RAM is identical between captures. Requiring the region to
+*actually change* between unlocks cut it to a handful.
+
+Hearing "name not known" is the signal that a scenario has been unlocked that
+the mod has no name for. **One name, not a new table**: run `menu_probe.py
+rowscan B0536C B05370` on the grown list, read that row off the screenshot it
+saves, and add one line to `labels_by_id`. The scenario number to key it on is
+in the array above, at the row that went unnamed.
 
 **This screen and Game Level cannot be told apart by any marker in the dynamic
 region.** `0x00A00000`-`0x00C00000` is identical between captures of the two
@@ -1258,6 +1281,12 @@ Level was added, and each cost a bug that only a live run revealed.
    this project: `0x00D53625` fitted six cued presses, three captures and a
    held-out seventh, and was not an index at all. Where the menu is short, say
    so beside the address and re-derive it the moment the list grows.
+   **For a list that grows, look for the list itself, not just the cursor.**
+   The game has to know which items it is showing, and that array is worth far
+   more than the cursor: it survives insertions, so names keyed by it never
+   shift. Search it by *shape* -- the shorter list is a subsequence of the
+   longer one -- rather than by value, and require the region to change between
+   the two, or a prefix of unchanged bytes will match everywhere.
 5. **Ask whether the HUD heuristic calls this screen gameplay.** If it does and
    the screen is not flagged `in_adventure`, menu reading is suspended and the
    screen is silent with no error anywhere. `check` says so in as many words.
@@ -1420,6 +1449,10 @@ interpretable.
 - **Where a save notice lives while it is on screen** has never been captured,
   so whether automatic narration still reaches one is unknown. See the story
   reader's scene-buffer rule.
+- **Scenario names still have to be learned one at a time.** The scenario
+  number is now read from the game, so a name never moves once learned, but the
+  names themselves are artwork and there is nowhere to read them from. Twenty-
+  six scenarios exist on the disc and four are named.
 - Other screens may also be misread as gameplay by the HUD detector, or shadow
   one another the way Title shadowed Game Level. Only the screens with captures
   on disk have been checked, and each new screen needs the same two questions

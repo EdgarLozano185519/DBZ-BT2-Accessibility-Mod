@@ -147,8 +147,9 @@ class Screen:
                  labels=None, subtitles=None, mirror=None, mirror_stride=1,
                  in_adventure=False, weak_marker=False, unknown_row=None,
                  alternate=None, search_band=None,
-                 marker_outlives_screen=False, labels_by_count=None,
-                 count_address=None, unknown_row_with_count=None):
+                 marker_outlives_screen=False, count_address=None,
+                 unknown_row_with_count=None, id_array=None, id_stride=4,
+                 labels_by_id=None):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -178,14 +179,16 @@ class Screen:
         self.unknown_row = unknown_row
         # The same, for a list whose length the game will tell us.
         self.unknown_row_with_count = unknown_row_with_count
-        # Names for a list that grows, keyed by how long the list is. Kept
-        # separate from `labels` because they answer a different question: a
-        # fixed menu's table is true for ever, while these are true only for
-        # one unlock state and must be re-derived, not extended, when the
-        # length changes. See labels_for().
-        self.labels_by_count = labels_by_count or {}
-        # Where the game keeps that length.
+        # Where the game keeps how many rows this list has.
         self.count_address = count_address
+        # An array of *which* item each row is, in the order the rows appear.
+        # A list that grows with the player's progress needs this: the row
+        # number means something different after every unlock, and the game's
+        # own answer to "what is this row" does not.
+        self.id_array = id_array
+        self.id_stride = id_stride
+        # Names keyed by that answer rather than by row, so they survive.
+        self.labels_by_id = labels_by_id or {}
         # The recorded marker, which sits beside the cursor.
         self.primary = Signature([(marker_address, marker)], near_cursor=True)
         # Evidence from a second allocation, which outlives the first. It names
@@ -235,15 +238,22 @@ class Screen:
                 # different address in this run. Either way, saying nothing is
                 # better than naming an option on a coin toss.
                 return raw, None, False
-        count = None
         if self.count_address is not None:
             count = pine.read8(self.count_address)
             if not 1 <= count <= MAX_UNNAMED_ROW:
                 # The screen is still loading, or this is a bad read. Either
                 # way it is not an answer, so ask again rather than name a row
-                # from a table that may not be the right one.
+                # from a list that may not be there yet.
                 return raw, None, False
-        return raw, self.labels_for(count).get(index), True
+            if index >= count:
+                return raw, None, False
+            if self.id_array is not None:
+                # Ask the game which scenario this row *is*, rather than
+                # assuming the row number means the same thing it did before
+                # the player unlocked something.
+                which = pine.read8(self.id_array + index * self.id_stride)
+                return raw, self.labels_by_id.get(which), True
+        return raw, self.labels.get(index), True
 
     def entry_count(self, pine) -> int | None:
         """How many rows the game says this list has, or None if unknown."""
@@ -255,18 +265,21 @@ class Screen:
             return None
         return count if 1 <= count <= MAX_UNNAMED_ROW else None
 
-    def labels_for(self, count: int | None) -> dict:
-        """The names to use for a list of this length.
+    def scenario_ids(self, pine) -> list[int] | None:
+        """Which scenarios this list is showing, in the order it shows them.
 
-        A screen of fixed length has one table and ignores the count.  A list
-        that grows with the player's progress does not: **the game inserts, it
-        does not append**, so a table written for one length is not merely
-        incomplete at another, it is wrong.  An unknown length therefore yields
-        no names at all rather than the closest ones to hand.
+        Diagnostic and test use; `option` reads the single entry it needs.
         """
-        if not self.labels_by_count:
-            return self.labels
-        return self.labels_by_count.get(count, {})
+        if self.id_array is None:
+            return None
+        count = self.entry_count(pine)
+        if count is None:
+            return None
+        try:
+            return [pine.read8(self.id_array + n * self.id_stride)
+                    for n in range(count)]
+        except Exception:
+            return None
 
     def unknown_row_label(self, raw: int, count: int | None = None) -> str | None:
         """Describe a row with no name, or return None to stay silent."""
@@ -545,7 +558,6 @@ SCREENS = [
         # Select Scenario section of docs/memory-map.md for the recipe to find
         # a genuine second copy. The old one was never a second copy of this;
         # it was a different quantity that a two-row list could not distinguish.
-        count_address=0x00B05370,
         # **Observed still resident after Dragon Adventure was left**, on the
         # main menu and on Options, for 168 consecutive frames of the
         # 2026-09-07 17:04 session. That is what took the main menu's name
@@ -554,42 +566,45 @@ SCREENS = [
         # address is kept because it is the only one that separates this
         # screen from Game Level, and it is now outranked rather than trusted.
         marker_outlives_screen=True,
-        # **The game inserts, it does not append**, and it has now done so
-        # twice. Tree of Might landed at index 1, moving Fateful Brothers from
-        # 1 to 2; Lord Slug then landed at index 2, moving it to 3. Extending
-        # the old table either time would have renamed scenarios that were
-        # already there. So the names are keyed by how long the list is, and a
-        # length with no table of its own yields no names at all rather than
-        # the nearest ones. `0x00B05370` reads that length: 2 on all seven
-        # two-entry captures, 3 on all three rows of the three-entry list, and
-        # 4 on all four rows of the four-entry one.
+        # **The game inserts, it does not append**, and it has done so twice:
+        # Tree of Might landed at index 1, moving Fateful Brothers from 1 to 2,
+        # and Lord Slug then landed at index 2, moving it to 3. So a row number
+        # means something different after every unlock, and a table keyed by it
+        # is not merely incomplete afterwards -- it is wrong.
         #
-        # Every table here was read off a screenshot of the row it names, and
-        # each one also has to explain the rows drawn above and below, since
-        # the list wraps with the highlighted row centred. Sixteen facts for
-        # the four-entry table, not four.
+        # **`0x00B05308` is the game's own answer to "what is this row".** It
+        # is an array of scenario numbers, one per row on a four-byte stride,
+        # in the order the rows appear:
         #
-        # **No canonical scenario identity exists to escape this**, which was
-        # looked for properly and is written up in docs/memory-map.md: no byte
-        # or 16-bit value survives, the 32-bit survivors are two small fields
-        # whose values already collide between scenarios, and there is no
-        # unlocked-set bitmask or flag array anywhere in EE RAM. So extending
-        # this is not a matter of appending a name. On the grown list run
+        #     two entries    [0, 21]
+        #     three entries  [0, 1, 21]
+        #     four entries   [0, 1, 2, 21]
         #
-        #     menu_probe.py rowscan B0536C B05370 --seconds=60
+        # which is why Fateful Brothers keeps being pushed to the end and the
+        # new scenarios keep arriving before it -- the list is the unlocked
+        # scenarios in numerical order, and 21 sorts after 0, 1 and 2. Names
+        # keyed by that number do not shift when the list grows, so **an unlock
+        # now costs one unnamed row rather than all of them.**
         #
-        # read the rows off the screenshots it saves, and write a new table.
-        # It takes about a minute and needs the player only to press Down.
-        labels_by_count={
-            2: {0: "Saiyan Saga", 1: "Fateful Brothers"},
-            3: {0: "Saiyan Saga", 1: "Tree of Might", 2: "Fateful Brothers"},
-            4: {0: "Saiyan Saga", 1: "Tree of Might", 2: "Lord Slug",
-                3: "Fateful Brothers"},
+        # Checked against all twelve captures that have a screenshot beside
+        # them, spanning three list lengths and several PCSX2 sessions: in
+        # every one, the number at the highlighted row names the scenario in
+        # the picture. The array is also identical at every row of the same
+        # list, as a list's contents should be.
+        #
+        # `0x00B05370` reads the length, and bounds the array read.
+        id_array=0x00B05308, id_stride=4,
+        count_address=0x00B05370,
+        labels_by_id={
+            0: "Saiyan Saga",
+            1: "Tree of Might",
+            2: "Lord Slug",
+            21: "Fateful Brothers",
         },
-        # A row with no name means the list has grown again. Say which row it
-        # is and how many there are, and admit the name is missing -- that is
-        # honest, it is checkable, and hearing it is the signal that every name
-        # on this screen needs re-deriving rather than extending.
+        # A scenario number with no name is one the player has just unlocked.
+        # Say which row it is and how many there are, and admit the name is
+        # missing: honest, checkable, and it needs one line added here rather
+        # than the whole table re-derived.
         unknown_row="Scenario {position}, name not known.",
         unknown_row_with_count="Scenario {position} of {count}, "
                                "name not known.",

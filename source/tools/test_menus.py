@@ -524,23 +524,70 @@ def test_the_four_entry_list() -> None:
     check("the refuted address cannot tell four rows apart",
           len(refuted) < len(LIVE_ROWS_FOUR), f"took values {sorted(refuted)}")
 
-    # Both insertions, stated as the tables themselves.
-    tables = scenario.labels_by_count
-    check("Fateful Brothers has been pushed along by every unlock",
-          [tables[n][n - 1] for n in (2, 3, 4)]
-          == ["Fateful Brothers"] * 3)
-    check("and Saiyan Saga has stayed at the front",
-          [tables[n][0] for n in (2, 3, 4)] == ["Saiyan Saga"] * 3)
+
+# What each capture's screenshot shows, for the whole scenario-list history.
+# Twelve pictures across three list lengths and several PCSX2 sessions.
+SCENARIO_SHOTS = [
+    ("posn0", "Saiyan Saga"), ("posn1", "Fateful Brothers"),
+    ("posn2", "Saiyan Saga"), ("posn3", "Fateful Brothers"),
+    ("posn4", "Saiyan Saga"), ("posn5", "Fateful Brothers"),
+    ("events0", "Fateful Brothers"),
+    ("scen3_fb", "Fateful Brothers"),
+    ("row0", "Saiyan Saga"), ("row1", "Tree of Might"),
+    ("row2", "Lord Slug"), ("row3", "Fateful Brothers"),
+]
 
 
-def test_a_fifth_scenario_is_not_guessed_at() -> None:
-    """A length with no table of its own must yield no names at all.
+def test_the_scenario_is_asked_for_by_name() -> None:
+    """The row number shifts at every unlock; the scenario number does not.
 
-    Extending the table rather than re-deriving it is the trap this screen has
-    now sprung twice: Tree of Might landed at index 1 and moved Fateful
-    Brothers to 2, then Lord Slug landed at index 2 and moved it to 3. An
-    appended name would have renamed scenarios that were already there, both
-    times, confidently and silently.
+    `0x00B05308` is the game's own list of which scenarios it is showing, so
+    the mod asks what a row *is* rather than assuming the row number still
+    means what it did before. This is what makes an unlock cost one unnamed
+    row instead of all of them.
+    """
+    print("\nNaming the row by which scenario it is:")
+    scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
+
+    for name, shown in SCENARIO_SHOTS:
+        pine = load(name)
+        if pine is None:
+            check(f"{name} present", False, "capture missing")
+            continue
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        check(f"{name} says {shown!r}, as its screenshot does",
+              menu.speaker.said == ["Select Scenario", shown],
+              f"said {menu.speaker.said}")
+
+    # A list's contents cannot depend on where the cursor is sitting.
+    for group, label in ((["posn0", "posn1", "posn3", "events0"], "two"),
+                         (["row0", "row1", "row2", "row3"], "four")):
+        seen = set()
+        for name in group:
+            pine = load(name)
+            if pine is not None:
+                seen.add(tuple(scenario.scenario_ids(pine)))
+        check(f"the {label}-entry list reads the same at every row",
+              len(seen) == 1, f"got {seen}")
+
+    # And the numbers explain why the list grows the way it does.
+    pine = load("row0")
+    if pine is not None:
+        check("the four-entry list is [0, 1, 2, 21]",
+              scenario.scenario_ids(pine) == [0, 1, 2, 21],
+              f"got {scenario.scenario_ids(pine)}")
+        check("which is sorted, so Fateful Brothers stays last",
+              scenario.scenario_ids(pine) == sorted(scenario.scenario_ids(pine)))
+
+
+def test_a_newly_unlocked_scenario_costs_one_row() -> None:
+    """An unknown scenario number must not disturb the names around it.
+
+    Before the numbers were found, a longer list meant no names at all: the
+    player heard "Scenario 1 of 4, name not known" on every row. Now only the
+    new one is unnamed, and the rest keep working.
     """
     print("\nWhen a fifth scenario unlocks:")
     base = load("row0")
@@ -548,22 +595,29 @@ def test_a_fifth_scenario_is_not_guessed_at() -> None:
         check("row0 present", False, "capture missing")
         return
     scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
-    for row in range(5):
-        pine = PatchedPine(base, {scenario.cursor: bytes([row]),
-                                  scenario.count_address: b"\x05"})
+    # A new scenario numbered 7 lands between Lord Slug and Fateful Brothers,
+    # which is where the numbers say it must go.
+    grown = {scenario.count_address: b"\x05"}
+    for row, which in enumerate([0, 1, 2, 7, 21]):
+        grown[scenario.id_array + row * scenario.id_stride] = bytes([which])
+
+    expected = ["Saiyan Saga", "Tree of Might", "Lord Slug",
+                "Scenario 4 of 5, name not known.", "Fateful Brothers"]
+    for row, want in enumerate(expected):
+        pine = PatchedPine(base, {**grown, scenario.cursor: bytes([row])})
         menu = reader()
         for tick in range(4):
             menu.poll(pine, tick * 0.1)
-        want = ["Select Scenario", f"Scenario {row + 1} of 5, name not known."]
-        check(f"row {row} of five says its position, not a name",
-              menu.speaker.said == want, f"said {menu.speaker.said}")
+        check(f"row {row} says {want!r}",
+              menu.speaker.said == ["Select Scenario", want],
+              f"said {menu.speaker.said}")
 
-    # A length the game has not finished writing is not an answer either.
-    pine = PatchedPine(base, {scenario.count_address: b"\x00"})
+    # A row past the end of the list is not an answer.
+    pine = PatchedPine(base, {**grown, scenario.cursor: b"\x06"})
     menu = reader()
     for tick in range(6):
         menu.poll(pine, tick * 0.1)
-    check("an implausible length is read again rather than acted on",
+    check("a row beyond the list is read again rather than named",
           menu.speaker.said == ["Select Scenario"], f"said {menu.speaker.said}")
 
 
@@ -640,7 +694,8 @@ def main() -> int:
     test_a_silent_row_explains_itself()
     test_the_grown_scenario_list()
     test_the_four_entry_list()
-    test_a_fifth_scenario_is_not_guessed_at()
+    test_the_scenario_is_asked_for_by_name()
+    test_a_newly_unlocked_scenario_costs_one_row()
     test_a_moved_block()
     test_unmoved_captures_are_not_searched()
 
