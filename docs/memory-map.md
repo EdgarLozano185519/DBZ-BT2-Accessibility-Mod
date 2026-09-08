@@ -384,15 +384,79 @@ looks like.
 
 The list of scenarios, reached from Dragon Adventure before the story events
 and the Game Level chooser. A vertical list that wraps; the highlighted row
-stays centred and the names scroll through it. On this save it holds two
-entries, so the row above and the row below show the same one.
+stays centred and the names scroll through it. On this save it now holds
+**three** entries.
 
-- **Marker** -- `mc_da_2_text_off_l` at `0x00D53440`.
-- `0x00D53625` (byte) -- **cursor index**, plain, beside the marker.
-- `0x00B0536C` (byte) -- the **same index**, in the other allocation entirely.
-  `0x00D53634` carries it doubled, unused.
+- **Marker** -- `mc_da_2_text_off_l` at `0x00D53440`. Known to outlive the
+  screen; see below and the screen-identification section.
+- `0x00B0536C` (byte) -- **cursor index.**
+- `0x00B05370` (byte) -- **how many scenarios the list holds.**
+- `0x00D53625` -- **refuted as the cursor**, 2026-09-07. It was the cursor from
+  the day this screen was mapped. `0x00D53634` carries a value related to it,
+  also useless.
 
-- `0` Saiyan Saga, `1` Fateful Brothers
+- `0` Saiyan Saga, `1` Tree of Might, `2` Fateful Brothers -- **for a list of
+  three**. See the unlock section below: these names are true for one list
+  length only.
+
+### The cursor was wrong, and a two-entry list could not show it
+
+**Measured live 2026-09-07**, at all three rows, each paired with a screenshot
+saved beside the reading (`menu_probe.py rowscan`, `reference/probe/row*.png`):
+
+    highlighted        0x00D53625   0x00B0536C   0x00B05370
+    Fateful Brothers        1            2            3
+    Saiyan Saga             0            0            3
+    Tree of Might           1            1            3
+
+`0x00D53625` reads **1 for two different rows**, so it cannot be an index. It
+had been the cursor since this screen was mapped, and the reason it looked
+right is written in the original derivation: a list of two entries makes
+position indistinguishable from parity, so *any* counter of period two fits the
+press schedule as well as the real cursor does. That was recorded at the time
+as the thing to re-check when a third scenario unlocked. It came apart exactly
+there, and the symptom was the screen going silent -- the old cross-check
+disagreed with it on every row but one, and a disagreement is answered with
+silence.
+
+`0x00B0536C`, which had been the cross-check, is a bijection over the three
+rows. It also explains **the rows drawn above and below** the highlighted one
+in all three screenshots, since the list wraps and the highlighted row is
+centred: nine facts rather than three. And it agreed with the row on all seven
+two-entry captures, which is a transition it was not derived from.
+
+**There is no cross-check any more, and that is a real loss.** The old one was
+never a second copy of this quantity; it was a different number that a two-row
+list could not tell apart. Finding a genuine second copy needs a ramp search
+over the grown list -- `menu_probe.py positionscan --screen="Select Scenario"`
+with cues, then `fit 1,2,3,1,2,3` from the screenshots -- which costs the
+player a couple of minutes and 31 MB per press. Worth doing before this screen
+is next changed; not done unasked.
+
+### The game inserts, it does not append
+
+**Tree of Might unlocked at index 1**, moving Fateful Brothers from 1 to 2.
+This is the case these notes flagged as the dangerous one, and it happened:
+
+    two entries      0 Saiyan Saga    1 Fateful Brothers
+    three entries    0 Saiyan Saga    1 Tree of Might      2 Fateful Brothers
+
+So **extending the table would have been wrong**. Appending "Tree of Might" as
+index 2 would have renamed both scenarios that were already there, confidently
+and silently -- the failure this project treats as worse than silence.
+
+The names are therefore keyed by how long the list is, and `0x00B05370` reads
+that length: 2 on all seven two-entry captures, 3 on all three rows of the
+three-entry list. A length with **no table of its own yields no names at all**,
+and the row says its position instead -- "Scenario 2 of 4, name not known." A
+length outside 1 to `MAX_UNNAMED_ROW` is treated as a screen still loading and
+read again rather than acted on.
+
+Hearing "name not known" is the signal that the list has grown again and every
+name on this screen must be **re-derived, not extended**: run `menu_probe.py
+rowscan D53625 B0536C B05370` on the grown list, read the rows off the
+screenshots it saves, and write a new table for that length. Keeping the old
+tables costs nothing and keeps the older captures meaningful.
 
 **This screen and Game Level cannot be told apart by any marker in the dynamic
 region.** `0x00A00000`-`0x00C00000` is identical between captures of the two
@@ -418,34 +482,38 @@ PINE session before the scan began agrees with all four, and is genuinely held
 out. Detection and cursor were then replayed offline against all thirteen
 captures with no mismatch, and confirmed live on the screen itself.
 
-Because the list has two entries, position is only parity, and any counter with
-period two fits the press schedule as well as the cursor does. The four
-survivors are believable because they also **differ from the Game Level
+Because the list had two entries, position was only parity, and any counter
+with period two fitted the press schedule as well as the cursor did. The four
+survivors were believable because they also **differ from the Game Level
 capture** and are small enough to be an index -- not because the press schedule
 was selective. A third scenario would make this much stronger, and re-checking
 it then is worth the minute it costs.
 
-**A third scenario has now unlocked, and the player reports the screen silent.**
-Reported 2026-09-07. Two rows agree with every counter of period two, so if
-either `0x00D53625` or `0x00B0536C` is parity rather than the index, they part
-company at row 2 for the first time -- and `option()` answers a disagreement
-with silence, permanently, for as long as the player stays on the screen. That
-matches the report exactly, but it is a hypothesis: nothing on disk can
-distinguish the two, since all seven captures hold rows 0 and 1 only.
+**That warning was right, and one of the four was wrong.** `0x00D53625` was
+picked out of those four and shipped as the cursor; it is not an index at all.
+The minute the re-check would have cost was small next to the screen going
+silent in play. **A cursor derived on a list of two entries is not derived at
+all** -- take the warning literally next time, and mark such an address as
+provisional in the code rather than in a note.
 
-So the mod now says which it is, from ordinary play rather than a probe
-session. After twenty consecutive disagreements it announces once that the two
-copies disagree and that F12 still reads the screen, and it writes **each
-distinct pair of values** to the log. One copy counting 0, 1, 2 while the other
-falls back to 0 is a parity counter caught in the act, and names the address to
-keep. If instead they agree, the row will simply say "Scenario 3, name not
-known." and the fault is elsewhere -- the log will show that too, by saying
-nothing.
+**A third scenario unlocked on 2026-09-07 and the prediction held.** The
+screen went silent, the two copies had parted company, and `0x00D53625` was the
+one that was never an index. Settled by reading all three rows live with a
+screenshot beside each -- see the two sections above. The prediction being
+written down before it happened is the reason it took one live minute to
+confirm rather than a session of guessing.
 
-**The labels hold for this save's unlock state only.** The names are artwork,
-like every other UI label here: "Fateful Brothers" and "Saiyan Saga" appear
-nowhere in RAM and nowhere in the disc corpus, searched end to end. So the
-words have to come from a table we wrote, indexed by cursor position, and that
+The mechanism that reported it is worth keeping for the next screen. A
+disagreement that persists is now announced once, with F12 offered as the way
+through, and each distinct pair of values goes to the log: permanent silence is
+indistinguishable from a broken mod, which is the fault this project exists to
+avoid.
+
+**The labels hold for one unlock state only, and that is now enforced rather
+than hoped for.** The names are artwork, like every other UI label here:
+"Fateful Brothers", "Saiyan Saga" and "Tree of Might" appear nowhere in RAM and
+nowhere in the disc corpus, searched end to end. So the words have to come from
+a table we wrote, indexed by cursor position, and that
 table is only true while the list is what it was when it was written.
 
 This is the only screen here whose length is not ours to know, and it is the
@@ -1137,6 +1205,11 @@ Level was added, and each cost a bug that only a live run revealed.
    in the screen's own allocation and a multiplied one in static memory. Wire
    both and cross-check them; one address cannot tell a correct read from a
    drifted one.
+   **A menu with N entries cannot distinguish the cursor from any counter of
+   period N.** Two entries is the worst case and it shipped a wrong address on
+   this project: `0x00D53625` fitted six cued presses, three captures and a
+   held-out seventh, and was not an index at all. Where the menu is short, say
+   so beside the address and re-derive it the moment the list grows.
 5. **Ask whether the HUD heuristic calls this screen gameplay.** If it does and
    the screen is not flagged `in_adventure`, menu reading is suspended and the
    screen is silent with no error anywhere. `check` says so in as many words.
@@ -1292,8 +1365,10 @@ interpretable.
   addresses do, and therefore whether any of them could replace `0x00D53440`.
   `python menu_probe.py snap mainmenu_after --full` on the main menu, having
   been inside Dragon Adventure that session, settles it.
-- **Whether Select Scenario's cursor or its mirror is the real index** is
-  unknown, and a third scenario is where it matters. See that screen's section.
+- **Select Scenario has no cross-check.** Its cursor is settled and verified
+  at three rows against screenshots, but the address that used to serve as the
+  second copy turned out to be a different quantity. A ramp search over the
+  grown list would find a genuine one; see that screen's section.
 - **Where a save notice lives while it is on screen** has never been captured,
   so whether automatic narration still reaches one is unknown. See the story
   reader's scene-buffer rule.

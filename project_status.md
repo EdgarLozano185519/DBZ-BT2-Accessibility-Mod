@@ -25,9 +25,12 @@ Menus speak through NVDA, driven by the game's own memory:
   F12 reads the instruction line, the game's own text. It used to read an event
   name as well, which was the first event's name whatever the player had
   chosen; that is gone as of 2026-09-07.
-- **Select Scenario** -- the Dragon Adventure scenario list: Saiyan Saga and
-  Fateful Brothers on this save, chosen with Up and Down. Added 2026-09-07
-  after the player reported it silent.
+- **Select Scenario** -- the Dragon Adventure scenario list: Saiyan Saga, Tree
+  of Might and Fateful Brothers on this save, chosen with Up and Down.
+  **Confirmed live on all three rows 2026-09-07**, each against a screenshot.
+  Its cursor was wrong from the day it was mapped and only showed it when a
+  third scenario unlocked; the names are now keyed by how long the list is,
+  because the game **inserts** rather than appends.
 - **C teaches this map's scale by teleporting, so T can reach the story
   marker.** Added and **confirmed in play 2026-09-07**, twice on the Blue
   landmass map, after which T reached the story objective. Six short commanded
@@ -155,7 +158,7 @@ numpy/scipy/Pillow) for testing menus without the full guide.
 **The offline suites need no emulator, no game and no player**, and are the
 first thing to run after changing any of this:
 
-    ..\..\.venv\Scripts\python.exe test_menus.py    # 113 checks, 21 captures
+    ..\..\.venv\Scripts\python.exe test_menus.py    # 126 checks, 22 captures
     ..\..\.venv\Scripts\python.exe test_story.py    # 44 checks
     ..\..\.venv\Scripts\python.exe test_mapcal.py   # 30 checks
 
@@ -335,30 +338,38 @@ rather than by precedence.
 any session. It is kept because the reasoning stands and it costs nothing until
 it is needed, but it was insurance and not the fix.
 
-### 2. The third scenario is silent, and the mod will now say why
+### 2. Select Scenario has no cross-check left
 
-Reported in play 2026-09-07: a third scenario has unlocked and the row does not
-speak. The mod was built for this -- it should say "Scenario 3, name not
-known." -- so something upstream of that is refusing.
+**The third-scenario fault is fixed and confirmed live**, so what remains is
+the evidence it cost. Every other readable screen here reads its cursor twice
+over; this one now reads it once.
 
-The likeliest cause was written down before it happened. The cursor was derived
-on a list of **two** entries, where position is only parity, so any counter of
-period two fits the press schedule as well as the real index does; that was
-recorded at the time as the thing to re-check when a third scenario appeared.
-If one of `0x00D53625` and `0x00B0536C` is parity, they part company at row 2
-for the first time, and `option()` answers a disagreement with silence -- for
-as long as the player stays on the screen. All seven captures hold rows 0 and 1
-only, so nothing on disk can separate them.
+`0x00D53625` was the cursor from the day this screen was mapped and is not an
+index at all -- it reads 1 for two different rows. It survived six cued
+presses, three captures and a held-out seventh because the list had **two**
+entries, where position and parity are the same thing. `0x00B0536C`, until now
+the cross-check, is the real index: a bijection over the three rows, and it
+explains the rows drawn above and below the highlighted one in all three
+screenshots as well.
 
-So the mod now produces the evidence from ordinary play. After twenty
-consecutive disagreements it says once that the two copies disagree and that
-F12 still reads the screen, and it logs **each distinct pair of values**. One
-copy counting 0, 1, 2 while the other falls back to 0 is a parity counter
-caught in the act, and names the address to keep.
+So the pair was never a pair, and removing the impostor leaves one address.
+Finding a genuine second copy is a ramp search over the grown list:
 
-**What is owed:** visit Select Scenario, move up and down the three rows, and
-send the log. If the two agree throughout, the log will say nothing and the
-fault is elsewhere -- which is also an answer.
+    python menu_probe.py positionscan --screen="Select Scenario"         --cues=Down,Down,Down,Down,Down,Down
+    # read the rows off the screenshots, then
+    python menu_probe.py fit 2,0,1,2,0,1
+
+Two minutes with the player at the controls and 31 MB per press. **Worth doing
+before this screen is next changed**, and not done unasked.
+
+Two smaller things fell out of the same session and are worth keeping in view:
+
+- **`0x00B05370` is the list length**, 2 on all seven two-entry captures and 3
+  on all three rows of the three-entry one. It is what makes an unlock
+  detectable rather than silently wrong, and it rests on those two states only.
+- **A fourth scenario will say "Scenario N of 4, name not known."** That is the
+  design working, not a fault: the names must be re-derived with `rowscan`, not
+  extended, because the game inserts.
 
 ### 3. The event name is gone from F12, and reading it properly still needs an index
 
@@ -586,6 +597,29 @@ manufactured offline.
 
 ## Recently finished
 
+### 2026-09-07: the scenario list, and a cursor that was never one
+
+- **Select Scenario speaks all three rows**, confirmed live against a
+  screenshot of each. `0x00D53625` had been its cursor since the screen was
+  mapped and is not an index at all -- it reads 1 for two different rows. The
+  cross-check `0x00B0536C` is the real thing, and also explains the rows drawn
+  above and below the highlighted one in every screenshot.
+- **A list of two entries cannot derive a cursor.** Position and parity are the
+  same thing there, so six cued presses, three captures and a held-out seventh
+  all fitted an address that was never right. The original notes said to
+  re-check when a third scenario unlocked; the screen going silent in play is
+  what that re-check cost by being deferred.
+- **The game inserts, it does not append.** Tree of Might landed at index 1 and
+  moved Fateful Brothers from 1 to 2, so extending the table would have renamed
+  both scenarios that were already there. Names are now keyed by list length,
+  read from `0x00B05370`, and a length with no table yields no names at all.
+- **`menu_probe.py rowscan` is new**: it reads a few known addresses at 10 Hz
+  and photographs the screen the moment they settle on a new value, so every
+  row the player passes through is recorded beside a picture of it. Seconds and
+  kilobytes, where `positionscan` costs minutes and 31 MB per press.
+- **The cross-check is gone with the impostor**, and that is a real loss --
+  item 2 under Next steps has the recipe for finding a genuine one.
+
 ### 2026-09-07: the leftover marker, and menus made quiet
 
 - **The main menu's silence was a stale marker, and the log said so** the first
@@ -610,7 +644,7 @@ manufactured offline.
   unlocked.
 - **Diagnostics no longer repeat.** The first collision note wrote the same
   line 168 times in one session.
-- 113 checks in `test_menus.py`, 44 in `test_story.py`, all offline.
+- 126 checks in `test_menus.py`, 44 in `test_story.py`, all offline.
 
 ### 2026-09-07: menus speak again, and F12 answers everywhere
 

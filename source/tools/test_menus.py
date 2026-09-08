@@ -391,22 +391,19 @@ def test_a_stale_marker_loses() -> None:
 def test_a_silent_row_explains_itself() -> None:
     """Two cursor copies that will not agree must not just go quiet.
 
-    Select Scenario's cursor was derived on a list of two entries, where
-    position is only parity, so a counter with period two fits the presses as
-    well as the real index does. A third scenario is exactly where that would
-    come apart, and the failure would be permanent silence on the new row --
-    indistinguishable from the mod being broken.
+    Silence for as long as the player stays on a screen is indistinguishable
+    from the mod being broken, which is the fault this project exists to
+    avoid.  Demonstrated on the main menu, whose two copies are a genuine pair.
     """
     print("\nWhen a screen's two copies of the cursor disagree:")
-    pine = load("events0")
+    pine = load("auto0")
     if pine is None:
-        check("events0 present", False, "capture missing")
+        check("auto0 present", False, "capture missing")
         return
-    scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
-    # The near copy says row 3, the far one is stuck at parity 0.
-    disagreeing = PatchedPine(pine, {scenario.cursor: b"\x02",
-                                     scenario.mirror: b"\x00"})
-    raw, label, settled = scenario.option(disagreeing)
+    main = next(s for s in menus.SCREENS if s.name == "Main Menu")
+    disagreeing = PatchedPine(pine, {main.cursor: b"\x03",
+                                     main.mirror: b"\x07"})
+    raw, label, settled = main.option(disagreeing)
     check("the read is unsettled, and no row is named",
           not settled and label is None)
 
@@ -414,8 +411,7 @@ def test_a_silent_row_explains_itself() -> None:
     for tick in range(menus.UNSETTLED_BEFORE_SAYING + 4):
         menu.poll(disagreeing, tick * 0.1)
     said = menu.speaker.said
-    check("the screen is named first", said[:1] == ["Select Scenario"],
-          f"said {said}")
+    check("the screen is named first", said[:1] == ["Main Menu"], f"said {said}")
     explains = [line for line in said if "disagree" in line]
     check("the silence is explained exactly once", len(explains) == 1,
           f"said {said}")
@@ -423,15 +419,97 @@ def test_a_silent_row_explains_itself() -> None:
           bool(explains) and "F12" in explains[0])
 
     # Agreement must still be the quiet, ordinary case.
-    agreeing = PatchedPine(pine, {scenario.cursor: b"\x02",
-                                  scenario.mirror: b"\x02"})
+    agreeing = PatchedPine(pine, {main.cursor: b"\x03", main.mirror: b"\x03"})
     menu = reader()
     for tick in range(menus.UNSETTLED_BEFORE_SAYING + 4):
         menu.poll(agreeing, tick * 0.1)
-    check("a third scenario with both copies agreeing says its position",
-          menu.speaker.said == ["Select Scenario",
-                                "Scenario 3, name not known."],
+    check("a row both copies agree on is simply spoken",
+          menu.speaker.said == ["Main Menu", "Dueling"],
           f"said {menu.speaker.said}")
+
+
+# The three rows of the grown scenario list, read live on 2026-09-07 with a
+# screenshot saved beside each one. `0x00B0536C` is the cursor, `0x00B05370`
+# the length. The fourth column is the address that used to be the cursor and
+# reads 1 for two different rows, which is what refutes it.
+LIVE_ROWS = [
+    ("Fateful Brothers", 2, 3, 1),
+    ("Saiyan Saga", 0, 3, 0),
+    ("Tree of Might", 1, 3, 1),
+]
+
+
+def test_the_grown_scenario_list() -> None:
+    """Three scenarios, and the new one was inserted rather than appended."""
+    print("\nThe scenario list, at the three rows photographed live:")
+    base = load("scen3_fb")
+    if base is None:
+        check("scen3_fb present", False, "capture missing")
+        return
+    scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
+
+    check("the refuted address is no longer the cursor",
+          scenario.cursor == 0x00B0536C)
+    check("and it is not kept as a cross-check either", scenario.mirror is None)
+
+    seen = set()
+    for shown, cursor, count, refuted in LIVE_ROWS:
+        pine = PatchedPine(base, {scenario.cursor: bytes([cursor]),
+                                  scenario.count_address: bytes([count]),
+                                  0x00D53625: bytes([refuted])})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        check(f"{shown} is named", menu.speaker.said == ["Select Scenario", shown],
+              f"said {menu.speaker.said}")
+        seen.add(refuted)
+    check("the refuted address really does repeat itself across rows",
+          len(seen) < len(LIVE_ROWS))
+
+    # The two-entry captures still work, because the names are keyed by length.
+    for name, want in (("posn0", "Saiyan Saga"), ("events0", "Fateful Brothers")):
+        pine = load(name)
+        if pine is None:
+            continue
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        check(f"{name} still says {want!r} on the two-entry list",
+              menu.speaker.said == ["Select Scenario", want],
+              f"said {menu.speaker.said}")
+
+
+def test_a_fourth_scenario_is_not_guessed_at() -> None:
+    """A length with no table of its own must yield no names at all.
+
+    Extending the table rather than re-deriving it is the trap this screen has
+    already sprung once: Tree of Might landed at index 1 and moved Fateful
+    Brothers to 2, so an appended third name would have renamed both of the
+    scenarios that were already there, confidently and silently.
+    """
+    print("\nWhen a fourth scenario unlocks:")
+    base = load("scen3_fb")
+    if base is None:
+        check("scen3_fb present", False, "capture missing")
+        return
+    scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
+    for row in range(4):
+        pine = PatchedPine(base, {scenario.cursor: bytes([row]),
+                                  scenario.count_address: b"\x04"})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        want = ["Select Scenario", f"Scenario {row + 1} of 4, name not known."]
+        check(f"row {row} of four says its position, not a name",
+              menu.speaker.said == want, f"said {menu.speaker.said}")
+
+    # A length the game has not finished writing is not an answer either.
+    pine = PatchedPine(base, {scenario.count_address: b"\x00"})
+    menu = reader()
+    for tick in range(6):
+        menu.poll(pine, tick * 0.1)
+    check("an implausible length is read again rather than acted on",
+          menu.speaker.said == ["Select Scenario"], f"said {menu.speaker.said}")
 
 
 def test_a_moved_block() -> None:
@@ -505,6 +583,8 @@ def main() -> int:
     test_the_two_cursor_copies()
     test_a_stale_marker_loses()
     test_a_silent_row_explains_itself()
+    test_the_grown_scenario_list()
+    test_a_fourth_scenario_is_not_guessed_at()
     test_a_moved_block()
     test_unmoved_captures_are_not_searched()
 

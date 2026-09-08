@@ -147,7 +147,8 @@ class Screen:
                  labels=None, subtitles=None, mirror=None, mirror_stride=1,
                  in_adventure=False, weak_marker=False, unknown_row=None,
                  alternate=None, search_band=None,
-                 marker_outlives_screen=False):
+                 marker_outlives_screen=False, labels_by_count=None,
+                 count_address=None, unknown_row_with_count=None):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -175,6 +176,16 @@ class Screen:
         # the expected consequence of playing the game, and saying nothing
         # leaves the player unable to tell a new scenario from a broken mod.
         self.unknown_row = unknown_row
+        # The same, for a list whose length the game will tell us.
+        self.unknown_row_with_count = unknown_row_with_count
+        # Names for a list that grows, keyed by how long the list is. Kept
+        # separate from `labels` because they answer a different question: a
+        # fixed menu's table is true for ever, while these are true only for
+        # one unlock state and must be re-derived, not extended, when the
+        # length changes. See labels_for().
+        self.labels_by_count = labels_by_count or {}
+        # Where the game keeps that length.
+        self.count_address = count_address
         # The recorded marker, which sits beside the cursor.
         self.primary = Signature([(marker_address, marker)], near_cursor=True)
         # Evidence from a second allocation, which outlives the first. It names
@@ -224,9 +235,40 @@ class Screen:
                 # different address in this run. Either way, saying nothing is
                 # better than naming an option on a coin toss.
                 return raw, None, False
-        return raw, self.labels.get(index), True
+        count = None
+        if self.count_address is not None:
+            count = pine.read8(self.count_address)
+            if not 1 <= count <= MAX_UNNAMED_ROW:
+                # The screen is still loading, or this is a bad read. Either
+                # way it is not an answer, so ask again rather than name a row
+                # from a table that may not be the right one.
+                return raw, None, False
+        return raw, self.labels_for(count).get(index), True
 
-    def unknown_row_label(self, raw: int) -> str | None:
+    def entry_count(self, pine) -> int | None:
+        """How many rows the game says this list has, or None if unknown."""
+        if self.count_address is None:
+            return None
+        try:
+            count = pine.read8(self.count_address)
+        except Exception:
+            return None
+        return count if 1 <= count <= MAX_UNNAMED_ROW else None
+
+    def labels_for(self, count: int | None) -> dict:
+        """The names to use for a list of this length.
+
+        A screen of fixed length has one table and ignores the count.  A list
+        that grows with the player's progress does not: **the game inserts, it
+        does not append**, so a table written for one length is not merely
+        incomplete at another, it is wrong.  An unknown length therefore yields
+        no names at all rather than the closest ones to hand.
+        """
+        if not self.labels_by_count:
+            return self.labels
+        return self.labels_by_count.get(count, {})
+
+    def unknown_row_label(self, raw: int, count: int | None = None) -> str | None:
         """Describe a row with no name, or return None to stay silent."""
         if self.unknown_row is None:
             return None
@@ -235,6 +277,9 @@ class Screen:
         index = raw // self.stride
         if index > MAX_UNNAMED_ROW:
             return None
+        if count and self.unknown_row_with_count is not None:
+            return self.unknown_row_with_count.format(position=index + 1,
+                                                      count=count)
         return self.unknown_row.format(position=index + 1)
 
 
@@ -477,10 +522,30 @@ SCREENS = [
     # end; it does not cover insertion, and that must be re-checked the first
     # time a third scenario appears.
     Screen(
-        "Select Scenario", 0x00D53440, b"mc_da_2_text_off_l", 0x00D53625, 1,
-        {0: "Saiyan Saga", 1: "Fateful Brothers"},
-        mirror=0x00B0536C, mirror_stride=1,
+        "Select Scenario", 0x00D53440, b"mc_da_2_text_off_l", 0x00B0536C, 1,
         in_adventure=True,
+        # **The cursor moved here on 2026-09-07, and the old one is refuted.**
+        # A third scenario unlocked and the screen went silent. Read live at
+        # all three rows, each paired with a screenshot:
+        #
+        #     highlighted        0x00D53625   0x00B0536C   0x00B05370
+        #     Fateful Brothers        1            2            3
+        #     Saiyan Saga             0            0            3
+        #     Tree of Might           1            1            3
+        #
+        # `0x00D53625` reads 1 for two different rows, so it cannot be an
+        # index -- it had been the cursor since this screen was mapped, and it
+        # only ever looked right because a two-entry list makes every counter
+        # of period two agree. `0x00B0536C`, until now the cross-check, is a
+        # bijection, and it explains not just the highlighted row but the rows
+        # drawn above and below it in all three screenshots: nine facts, not
+        # three. It also agreed with the row on all seven two-entry captures.
+        #
+        # There is no cross-check left, and that is a real loss -- see the
+        # Select Scenario section of docs/memory-map.md for the recipe to find
+        # a genuine second copy. The old one was never a second copy of this;
+        # it was a different quantity that a two-row list could not distinguish.
+        count_address=0x00B05370,
         # **Observed still resident after Dragon Adventure was left**, on the
         # main menu and on Options, for 168 consecutive frames of the
         # 2026-09-07 17:04 session. That is what took the main menu's name
@@ -489,12 +554,29 @@ SCREENS = [
         # address is kept because it is the only one that separates this
         # screen from Game Level, and it is now outranked rather than trusted.
         marker_outlives_screen=True,
-        # The one screen here whose length is not ours to know. A row we have
-        # no name for means the list has grown, so say which row it is and
-        # admit the name is missing -- and treat hearing this as a sign that
-        # every name on this screen now needs re-checking, since an inserted
-        # scenario would shift the two we do know.
+        # **The game inserts, it does not append.** Tree of Might unlocked and
+        # landed at index 1, moving Fateful Brothers from 1 to 2 -- the exact
+        # case these notes warned about, where extending the old table would
+        # have renamed both of the scenarios that were already there. So the
+        # names are keyed by how long the list is, and a length with no table
+        # of its own yields no names at all rather than the nearest ones.
+        # `0x00B05370` reads that length: 2 on all seven two-entry captures,
+        # 3 on all three rows of the three-entry list.
+        #
+        # Extending this is therefore not a matter of appending a name. Run
+        # `menu_probe.py rowscan D53625 B0536C B05370` on the grown list, read
+        # the rows off the screenshots it saves, and write a new table.
+        labels_by_count={
+            2: {0: "Saiyan Saga", 1: "Fateful Brothers"},
+            3: {0: "Saiyan Saga", 1: "Tree of Might", 2: "Fateful Brothers"},
+        },
+        # A row with no name means the list has grown again. Say which row it
+        # is and how many there are, and admit the name is missing -- that is
+        # honest, it is checkable, and hearing it is the signal that every name
+        # on this screen needs re-deriving rather than extending.
         unknown_row="Scenario {position}, name not known.",
+        unknown_row_with_count="Scenario {position} of {count}, "
+                               "name not known.",
     ),
 ]
 
@@ -767,7 +849,8 @@ class MenuReader:
             # playing rather than a fault. Where the screen knows how to
             # describe such a row, say the position instead: it is honest, it
             # is checkable, and it tells the player the table needs extending.
-            label = self.screen.unknown_row_label(raw)
+            label = self.screen.unknown_row_label(
+                raw, self.screen.entry_count(pine))
             if label is None:
                 return
         if label != self._spoken:
