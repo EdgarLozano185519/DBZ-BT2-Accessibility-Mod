@@ -87,13 +87,14 @@ automatically. **NVDA is not bundled** — install it yourself if you want it.
 - **Game Level**, the difficulty chooser reached after picking a story event in
   Dragon Adventure — Level 1, 2 or 3, chosen with Left and Right
 
-The scenario names are pictures rather than words in the game's memory, so each
-one has to be seen once and written down by hand. The guide asks the game
-*which* scenario each row is, so the names it already knows stay right when you
-unlock something new — only the new one is unnamed, and it says **"Scenario 4
-of 5, name not known."** rather than guessing. Please report it when you hear
-that: it takes about a minute to add, and you only ever hear it once per
-scenario.
+The scenario names are pictures on screen rather than words, but the game keeps
+its own list of them in memory, and every one on the disc ships with the guide.
+It asks the game *which* scenario each row is, so unlocking a new one reads out
+straight away and never disturbs the others.
+
+If a row ever says **"Scenario 5 of 6, name not known."**, the game has used a
+number the guide has no name for. That should not happen, so please report it
+if it does.
 
 Screens it recognises but has not mapped are named and then stay quiet; screens
 it does not recognise say so, rather than guessing. Where the game keeps two
@@ -107,9 +108,9 @@ A few things you may hear it say, and what they mean:
 - **"Looking for the subtitles."** or **"Looking for the menu."** — the game
   has put something somewhere new and the guide is searching for it. It takes
   a moment and then carries on
-- **"Scenario 5 of 6, name not known."** — you have unlocked a scenario whose
-  name the guide has never been shown. Everything else in the list still reads
-  correctly
+- **"Scenario 5 of 6, name not known."** — the game used a scenario number the
+  guide has no name for. It should not happen; everything else in the list
+  still reads correctly, and it is worth reporting
 - **"the two copies of the cursor disagree"** — the guide can see the screen
   but not which row you are on, so it will not name one. F12 still works
 

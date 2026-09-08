@@ -631,6 +631,79 @@ def test_the_five_entry_list() -> None:
           menu.speaker.said == ["Select Scenario"], f"said {menu.speaker.said}")
 
 
+# Where the game's own scenario-name table sat in the captures that have it.
+# It is loaded during play rather than with the screen, so it is absent from
+# most captures and from a freshly booted emulator -- which is why the names
+# are shipped rather than read at runtime.
+NAME_TABLE = 0x01089702
+NAME_GRANULE = 0x40
+
+
+def walk_name_table(pine, start=NAME_TABLE, granules=40):
+    """The names in the game's table, joining a granule that ran over.
+
+    Two names are longer than a granule and continue into the next, so the
+    table has to be walked. Indexing it arithmetically returns the fragments
+    "n" and "ion" -- the same trap the event-name table sets.
+    """
+    names, pending, index = [], "", 0
+    while index < granules:
+        text, ended = [], False
+        for step in range(0, NAME_GRANULE, 2):
+            try:
+                low = pine.read8(start + index * NAME_GRANULE + step)
+                high = pine.read8(start + index * NAME_GRANULE + step + 1)
+            except Exception:
+                return names
+            if low == 0 and high == 0:
+                ended = True
+                break
+            text.append(chr(low | (high << 8)))
+        pending += "".join(text)
+        index += 1
+        if ended:
+            names.append(pending)
+            pending = ""
+    return names
+
+
+def test_the_names_match_the_game_s_own_table() -> None:
+    """Every shipped scenario name must be the one the game itself stores.
+
+    The names were walked out of the game's table rather than typed from
+    screenshots, and this is what keeps them honest: if the table and the
+    shipped list ever disagree, one of them has been edited by hand.
+    """
+    print("\nThe shipped names against the game's own table:")
+    pine = load("row0")
+    if pine is None:
+        check("row0 present", False, "capture missing")
+        return
+    scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
+    table = walk_name_table(pine)
+    check("the table was found in the capture", len(table) > 24,
+          f"walked {len(table)} entries")
+
+    for number, name in sorted(scenario.labels_by_id.items()):
+        check(f"scenario {number} is {name!r} in the game too",
+              number < len(table) and table[number] == name,
+              f"table says {table[number]!r}" if number < len(table) else "past end")
+
+    # The five that were read off screenshots, which anchor all the rest.
+    for name, number in (("Saiyan Saga", 0), ("Tree of Might", 1),
+                         ("Lord Slug", 2), ("Final Battle", 3),
+                         ("Fateful Brothers", 21)):
+        check(f"{name!r} is anchored at {number} by a screenshot",
+              scenario.labels_by_id.get(number) == name)
+
+    # Past the scenarios the table turns into battle stages. Speaking one of
+    # those as a scenario would be exactly the confident error to avoid.
+    check("the table continues into stage names",
+          len(table) > 25 and table[25] == "Wasteland", f"got {table[25:26]}")
+    check("and none of them is shipped as a scenario",
+          all(number <= 24 for number in scenario.labels_by_id))
+
+
 def test_a_newly_unlocked_scenario_costs_one_row() -> None:
     """An unknown scenario number must not disturb the names around it.
 
@@ -645,10 +718,10 @@ def test_a_newly_unlocked_scenario_costs_one_row() -> None:
         check("scen5_final present", False, "capture missing")
         return
     scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
-    # A scenario numbered 7 would land between Final Battle and Fateful
-    # Brothers, which is where the numbers say it must go.
+    # Every number the game uses is now named, so this is a number past
+    # the end of its table -- the only way left to be unnamed.
     grown = {scenario.count_address: b"\x06"}
-    for row, which in enumerate([0, 1, 2, 3, 7, 21]):
+    for row, which in enumerate([0, 1, 2, 3, 40, 21]):
         grown[scenario.id_array + row * scenario.id_stride] = bytes([which])
 
     expected = ["Saiyan Saga", "Tree of Might", "Lord Slug", "Final Battle",
@@ -741,6 +814,7 @@ def main() -> int:
     test_the_four_entry_list()
     test_the_scenario_is_asked_for_by_name()
     test_the_five_entry_list()
+    test_the_names_match_the_game_s_own_table()
     test_a_newly_unlocked_scenario_costs_one_row()
     test_a_moved_block()
     test_unmoved_captures_are_not_searched()

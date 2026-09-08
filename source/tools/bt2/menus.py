@@ -611,18 +611,68 @@ SCREENS = [
         #
         # **The design was then tested by the thing it was built for.** Final
         # Battle unlocked as number 3 and cost exactly one row: every other
-        # name kept working, and adding it was the line below. Under the old
-        # arrangement it would have cost all five.
+        # name kept working. Under the arrangement before it, that unlock
+        # would have cost all five names.
+        #
+        # Every scenario on the disc is now named ahead of time, so an unlock
+        # should cost nothing at all -- see the table below.
         #
         # `0x00B05370` reads the length, and bounds the array read.
         id_array=0x00B05308, id_stride=4,
         count_address=0x00B05370,
+        # **Every scenario on the disc, taken from the game's own name table.**
+        # The notes long said these names were artwork found nowhere in memory.
+        # They are in memory, as UTF-16LE text, in one table of all of them --
+        # the same shape as the event-name table, which should have been the
+        # hint. This list was walked out of that table rather than typed from
+        # screenshots, so a scenario is named the first time the player ever
+        # reaches it and nobody has to see the screen.
+        #
+        # Why the table is not simply read at runtime: it is loaded during
+        # play, not with the screen. On a freshly booted emulator sitting on
+        # this very list, a scan of all 31 MB found these names nowhere at all.
+        # So they are read once, here, where they cannot go missing. See the
+        # scenario-name table in docs/memory-map.md.
+        #
+        # **Anchored at five points**, each read off a screenshot of the row it
+        # names: 0, 1, 2, 3 and 21. The anchor at 21 is what carries the rest --
+        # a single insertion or omission anywhere between 3 and 21 would land
+        # Fateful Brothers somewhere else, and it does not. Entries 22 to 24 sit
+        # past the last anchor and rest on the table's order alone, which has
+        # been exact for the twenty-two before them.
+        #
+        # **The table continues past 24 into battle stage names** -- Wasteland,
+        # Namek, Kame House -- so it stops here. A scenario number the game
+        # never uses costs nothing; a stage name spoken as a scenario would be
+        # the confident error this project exists to avoid.
         labels_by_id={
             0: "Saiyan Saga",
             1: "Tree of Might",
             2: "Lord Slug",
             3: "Final Battle",
+            4: "Frieza Saga",
+            5: "Makyo Star",
+            6: "Cooler's Revenge",
+            7: "Return of Cooler",
+            8: "The History of Trunks",
+            9: "Android Saga",
+            10: "Super Android 13",
+            11: "Broly: The Legendary Super Saiyan",
+            12: "Ultimate Future Warrior",
+            13: "Bojack Unbound",
+            14: "Majin Buu Saga",
+            15: "Broly: The Second Coming",
+            16: "Fusion Reborn",
+            17: "Wrath of the Dragon",
+            18: "Baby, The Avenger",
+            19: "Ultimate Android",
+            20: "Evil Dragon of Absolute Destruction",
             21: "Fateful Brothers",
+            # "Beautfiul Treachery.." is the game's own spelling, kept as it
+            # is: this table says what the screen says, not what it should say.
+            22: "Beautfiul Treachery..",
+            23: "Ultimate Science Battle",
+            24: "Destined Rivals",
         },
         # A scenario number with no name is one the player has just unlocked.
         # Say which row it is and how many there are, and admit the name is

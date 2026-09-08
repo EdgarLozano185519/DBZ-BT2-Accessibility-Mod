@@ -113,11 +113,13 @@ the rule can be widened by measurement.
 
 ## When you unlock a scenario
 
-**One row will say "Scenario 5 of 6, name not known." and the rest keep their
-names.** That is the whole cost now: the mod reads the game's own record of
-*which* scenario each row is, so the names do not shift when the list grows.
-This has been through a real unlock -- Final Battle, 2026-09-07 -- and behaved
-exactly that way.
+**Nothing. It just reads out.** All twenty-five scenario names on the disc ship
+with the guide, keyed by the game's own scenario numbers, so a newly unlocked
+scenario is named the first time it appears and the rest are undisturbed.
+
+If a row ever does say **"Scenario 5 of 6, name not known."**, that means the
+game used a number this list does not have, which would be worth reporting. The
+steps below are how a name gets added, and should no longer be needed.
 
 To name the new one, with the guide app closed and PCSX2 on the Select Scenario
 screen:
@@ -130,10 +132,11 @@ second or two, and go round the list once. It photographs each row; the new
 name is read off the picture of the row that went unnamed, and added as one
 line to `labels_by_id` in `bt2/menus.py`, keyed by its scenario number.
 
-**Why the name itself cannot be automatic:** the scenario names are
-pre-rendered artwork. There is nowhere in memory to read the words from, so
-each one has to be seen once. What is no longer needed is re-deriving the
-others, which is what `0x00B05308` bought -- see `docs/memory-map.md`.
+**Why the name has to be seen once, for now:** the guide has no table of
+scenario names beyond the ones already written down. That may not be true for
+much longer -- all twenty-six names turn out to be in memory as text, and item
+3 under Next steps says what is left to prove before the guide can read them
+for itself. If that works, nobody ever has to be shown a scenario name again.
 
 ## Releasing
 
@@ -314,7 +317,7 @@ pause. It would also be a change to something that works, so it is still the
 player's call rather than the next session's.
 
 **3. Should a stray line be tolerated while the gate is unproven?** The
-stale-pointer guard is judged, not proven -- see item 7. The scene-buffer rule
+stale-pointer guard is judged, not proven -- see item 8. The scene-buffer rule
 above has incidentally made this much stricter: a stale pointer left aiming at
 menu text after a scene ends is now refused by address as well as by content.
 The remaining exposure is a stale pointer still inside the scene buffer.
@@ -428,7 +431,45 @@ is weaker than two copies agreeing -- it cannot catch a read that lands on a
 *different valid* row -- and it is the reason this screen is worth re-checking
 first if it ever misbehaves again.
 
-### 3. The event name is gone from F12, and reading it properly still needs an index
+### 3. Every scenario is named already -- done, but check the last three
+
+**The handoff question is answered: a player who unlocks a scenario hears its
+name, with no tools, no editing and nobody who has Claude.** All twenty-five
+scenario names now ship with the guide.
+
+The route was not the obvious one. The names *are* in RAM as UTF-16LE text, in
+one table -- the notes said for weeks they were artwork found nowhere in
+memory, and that was simply wrong. But the table cannot be read at runtime: it
+is loaded during play, not with the screen, and on a freshly booted emulator
+sitting on the scenario list a scan of all 31 MB found the names **nowhere at
+all**. Tested directly, after a restart.
+
+So the table was walked once, offline, out of a capture that had it, and the
+names shipped. Same result, no runtime dependency, nothing to go missing.
+
+**Anchored at five points** -- scenarios 0, 1, 2, 3 and 21, each read off a
+screenshot of the row it names. The anchor at 21 carries the rest: a single
+insertion or omission anywhere between 3 and 21 would land Fateful Brothers
+somewhere else, and it does not. `test_menus.py` checks every shipped name back
+against the game's own table, so the two cannot drift apart by hand.
+
+**What is worth a second look:**
+
+- **Scenarios 22, 23 and 24** -- "Beautfiul Treachery.." (the game's own
+  spelling), "Ultimate Science Battle" and "Destined Rivals" -- sit past the
+  last anchor and rest on the table's order alone. That order has been exact
+  for the twenty-two before them, so this is a small risk, but it is the one
+  place a wrong name could still be spoken. Confirmed the moment the player
+  unlocks any of them: if what they hear does not match the screen, these are
+  why.
+- **The table runs on into battle stage names** -- Wasteland, Namek, Kame House
+  -- so it stops at 24 on purpose. A stage announced as a scenario would be the
+  confident error this project exists to avoid.
+- **Where the table is, and when it loads**, is recorded in
+  `docs/memory-map.md` in case it is ever wanted live. Entering a scenario is
+  the suspected trigger; it was never pinned down because it stopped mattering.
+
+### 4. The event name is gone from F12, and reading it properly still needs an index
 
 `0x00D1A782` was recorded as the Game Level event name. It is not a display
 slot -- it is entry 0 of a table of event names on a `0x40` granule, and it
@@ -452,7 +493,7 @@ continuation fragment -- "n!", "pe Baby", "use" -- and would speak it with the
 same confidence as the bug it was meant to fix. The table has to be walked;
 `story_probe.names` is the reference implementation and needs no player.
 
-### 4. Verifications still owed
+### 5. Verifications still owed
 
 All cheap, all need the player at the controls. Ask before running any of
 them -- see Testing with the player.
@@ -474,7 +515,7 @@ them -- see Testing with the player.
 - **The Dragon Library marker, in a second run.** It rests on a single visit,
   unlike the main menu's and Options'.
 
-### 5. Map the remaining screens
+### 6. Map the remaining screens
 
 - **The story event list**, inside Dragon Adventure -- the screen between
   Select Scenario and Game Level, where the player is still choosing blind.
@@ -497,7 +538,7 @@ added to it on 2026-09-07 and both were paid for: check a marker against
 captures taken by the *route* that reaches the screen, not just any captures;
 and for a list that grows, look for the list itself and not only its cursor.
 
-### 6. Teleport-driven calibration: works. Does it work on a second map?
+### 7. Teleport-driven calibration: works. Does it work on a second map?
 
 `bt2/mapcal.py` on the **C** key. Six commanded hops -- a probe out, back, then
 a closed square -- each one a known world displacement, so the Jacobian is
@@ -561,7 +602,7 @@ play and by reading, not by a check that would catch a regression. There is no
 `test_guide.py` and building the fakes for one is a real piece of work; worth
 doing before that method is next changed.
 
-### 7. Finish the story reader
+### 8. Finish the story reader
 
 The reader ships and works. What is left is one unproven guard and three
 features the same discovery has made cheap.

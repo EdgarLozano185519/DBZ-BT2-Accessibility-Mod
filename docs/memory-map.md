@@ -523,6 +523,80 @@ all of them**, and adding that name is one line here rather than a re-derived
 table. The row is still bounded by the length at `0x00B05370`, and a number
 with no name still says "Scenario 4 of 5, name not known."
 
+### The scenario names are in memory after all -- all twenty-six of them
+
+**Found 2026-09-07, and it contradicts what this file said.** The notes claimed
+the scenario names "appear nowhere in RAM and nowhere in the disc corpus,
+searched end to end". They are in RAM, as UTF-16LE text, in a table of all 26 --
+the same shape as the event-name table, which should have been the hint.
+
+    0x01089702   Saiyan Saga, Tree of Might, Lord Slug, Final Battle,
+                 Frieza Saga, Makyo Star, Cooler's Revenge, ...
+                 ... Fateful Brothers, Beautfiul Treachery.., 
+                 Ultimate Science Battle
+
+On a `0x40` granule, and **it has to be walked, not indexed**: "Broly: The
+Legendary Super Saiyan" and "Evil Dragon of Absolute Destruction" are longer
+than 31 characters and run into the granule after them, so arithmetic indexing
+reads the fragments "n" and "ion". Exactly the trap the event-name table sets,
+for exactly the same reason.
+
+**Walking it maps scenario number to name correctly.** The 21st walked entry is
+"Fateful Brothers", which is scenario 21 in `0x00B05308` -- and the same holds
+for Saiyan Saga, Tree of Might, Lord Slug and Final Battle. Checked against all
+five names known from screenshots, in thirteen captures.
+
+**What this would buy** is the whole handoff problem: every scenario named
+automatically, including ones nobody has ever seen, with no OCR, no hand-written
+table and no session with the player. The built-in names would become a
+*cross-check* rather than the source of truth.
+
+**Tested across a restart, and the address does not hold.** PCSX2 was closed,
+reopened and the save loaded back to the scenario list, in a run started at
+22:11. `0x01089702` held nothing, and a scan of all 31 MB found the names
+**nowhere in memory at all** -- not moved, absent. The only hits were "Lord
+Slug" inside the synopsis prose and "Final Battle" in the event-name table,
+neither of which is this.
+
+So the table is **loaded during play, not with the screen**. That matches what
+the captures already showed within a single run: absent at 08:44, present from
+10:20 onward, after the player had been into a scenario. On the scenario list
+it is there on a later visit and not on the first one after booting.
+
+There is also **no pointer to it** -- nothing in RAM holds its address in all
+five captures checked -- so when it does move it cannot be followed the way the
+story text is.
+
+**Which kills reading it live -- and made the answer simpler, not harder.** A
+name cannot be read at the moment it is wanted. But the names never change, and
+there are only twenty-five of them, so the table was walked **once, offline**,
+out of a capture that had it, and the names ship with the guide in
+`labels_by_id`. No runtime dependency, nothing to go missing on a cold boot,
+and no player, OCR or tooling in the loop ever again.
+
+`test_menus.py` walks the table out of a capture and checks every shipped name
+against it, so the shipped list and the game cannot drift apart by hand.
+
+The table stops being scenarios at entry 25 and becomes **battle stage names**
+-- Wasteland, Rocky Area, Namek, World Tournament Stage, Kame House and the
+rest. Only 0 to 24 are shipped. A stage announced as a scenario would be the
+confident error this project exists to avoid.
+
+Entries 22 to 24 sit past the last screenshot anchor and rest on the table's
+order alone. That order is exact for the twenty-two before them, so the risk is
+small, but it is the one place a wrong scenario name could still be spoken --
+and unlocking any of them settles it.
+
+A second copy sits at `0x00B52C82`, resident during cutscenes but **not** while
+the scenario list is up, which is when it is wanted.
+
+So the design this points to is: walk the table, accept a name only if it
+decodes as readable text, and **cross-check it against the built-in name
+wherever there is one** -- five now. A disagreement means the table has moved
+or is not resident, and the answer is the built-in name, or "name not known".
+Finding it when it has moved would need a shape search, as the subtitle block
+uses: a run of granules each holding a terminated readable string.
+
 ### The three searches that missed it, and why
 
 Before this was found, three searches were run for a scenario identity and all
@@ -604,10 +678,10 @@ indistinguishable from a broken mod, which is the fault this project exists to
 avoid.
 
 **The labels hold for one unlock state only, and that is now enforced rather
-than hoped for.** The names are artwork, like every other UI label here:
-"Fateful Brothers", "Saiyan Saga" and "Tree of Might" appear nowhere in RAM and
-nowhere in the disc corpus, searched end to end. So the words have to come from
-a table we wrote, indexed by cursor position, and that
+than hoped for.** ~~The names appear nowhere in RAM.~~ **That was wrong** -- see
+the scenario-name table below; they are all there, and reading them is the way
+out of hand-written names. Until that is proved across an emulator restart the
+words come from a table we wrote, indexed by cursor position, and that
 table is only true while the list is what it was when it was written.
 
 This is the only screen here whose length is not ours to know, and it is the
@@ -1481,8 +1555,9 @@ interpretable.
   reader's scene-buffer rule.
 - **Scenario names still have to be learned one at a time.** The scenario
   number is now read from the game, so a name never moves once learned, but the
-  names themselves are artwork and there is nowhere to read them from. Twenty-
-  six scenarios exist on the disc and five are named.
+  names themselves have to be seen once each. **This may be about to change:**
+  all twenty-six are in RAM as text, and the section on the scenario-name table
+  says what is left to prove. Five of twenty-six are named by hand today.
 - Other screens may also be misread as gameplay by the HUD detector, or shadow
   one another the way Title shadowed Game Level. Only the screens with captures
   on disk have been checked, and each new screen needs the same two questions
