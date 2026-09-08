@@ -75,6 +75,17 @@ exact comparison against a 16-byte window clipped the trailing "e" and failed.
 A readable marker beats a state number because it can be checked rather than
 trusted.
 
+**A raw signature is also refused while the game is drawing text.** Added
+2026-09-08 after the title signature was heard naming the Dragon Tournament
+entry screen -- "Title", "New Game", four times, flickering as the bytes came
+and went. It had already been caught on Game Level and on the Dueling
+character select. All three draw text through `0x008C6244`; the title screen
+does not, its pointer aiming at bytes that are not text. Over all 44 captures
+on disk the signature is present beside no text on exactly one, `pos0`, the
+title itself. So `MenuReader._text_on_screen` gates every weak marker. The
+failure this can cause is "Unknown screen" on a title screen that has
+started drawing a line, which is the safe direction.
+
 **Named markers outrank raw signatures, and ambiguity means silence.** Markers
 were assumed to be mutually exclusive, and detection returned the first that
 matched. That assumption was wrong: the title screen's byte signature also
@@ -1044,6 +1055,81 @@ Note `menu_probe.py snap` stops at `0x01000000` by default. The cutscene scene
 file loaded at `0x0109FB40`, above that line, so a snap without `--full` would
 have missed the entire thing.
 
+## Character Select: the name comes from the game's text, not a cursor
+
+**Mapped 2026-09-08**, in Dueling. Two horizontal rows of seven portraits,
+player 1 above and player 2 below, with each player's highlighted name drawn
+as text between them; Up and Down move between rows of the roster, Left and
+Right along them.
+
+- **Marker** -- `mc_chara_select_yazurushi_up` at `0x009CE8D4`, the scroll
+  arrow sprite, in the dynamic region. The name occurs in no other capture on
+  disk, and no other screen's named marker matches here. The title screen's
+  raw signature does, as it does on Game Level, and before this entry the mod
+  named the screen Title and would have said "New Game". Named markers
+  outrank it. The same names sit again in a per-screen table at `0x00DD4040`
+  (player 1) and `0x00DD5940` (player 2), `mc_chara_cursor` among them; that
+  table is the kind known to outlive its screen and is not used.
+- **No cursor address.** `0x008C6244` -- the display pointer, see above --
+  aimed at player 1's highlighted name in all eight captures: `charsel0`
+  before the cued scan (Goku, entry 0) and `csel0`-`csel6` during it (Kid
+  Gohan, Teen Gohan, Kid Gohan, Tien, Chiaotzu, Teen Gohan, Kid Gohan), each
+  read off its screenshot. Entry 0 is also the table base, so the first
+  capture alone could not have told a display slot from a table -- the
+  scan's seven other values did.
+- **Player 2 has its own pointer**, `0x008C62DC`, a second draw structure
+  of the same shape 0x98 bytes after the first: pointer, then position
+  halfwords -- 231 for player 1's panel, 281 for player 2's, on the same row
+  -- then unit scale. The first pointer **does not follow player 2**: after
+  player 1 confirmed Goku and the cursor moved to the lower grid it stayed on
+  Goku, which is why player 2 was silent in play. Found by searching every
+  character-select capture for 32-bit words pointing into the name table:
+  exactly two, in every capture. It had been found from captures in which
+  player 2 never moved, so a second cued scan (`csel20`-`csel26`: Right,
+  Right, Left, Down, Right, Up, Left on player 2's grid) verified it -- Teen
+  Gohan, Gohan, Teen Gohan, Chiaotzu, Trunks (Sword), Piccolo, Gohan, each
+  matching its screenshot, with the first pointer on Goku throughout. Off
+  this screen the second slot is stale or empty: zero on the main menu, a
+  character name during a cutscene. `Screen.name_pointers` lists both, and
+  the reader speaks whichever changed.
+- **The name table** -- 135 UTF-16LE entries on a `0x40` stride at
+  `0x00D61C00`, roster order: four Gokus, Kid Gohan, three Teen Gohans,
+  Piccolo, Krillin ... Grandpa Gohan, Baby Vegeta, Random, "? ? ?", Password
+  Character, Shin, Galactic Warriors. The grid slot is not the table index:
+  the four Goku entries share one portrait. The table is resident elsewhere
+  in other captures -- `0x00B47D00` in the cutscene captures, `0x0108A280`
+  in the scenario ones -- so it moves with the allocation and is read through
+  the pointer, never by address.
+- **The badge glyphs.** Some names end in U+00AE or U+3327, which the game's
+  font draws as a circled R and a TM: "Goku ®", "Tien ™", but "Kid Gohan"
+  and "Chiaotzu" plain. What they mean is unknown. A trailing one is dropped
+  before the alphabet check in `story.displayed`; the same glyph mid-line
+  stays refused, because a battle once drew "Nappa" with one and speaking it
+  was wrong.
+- **The index search found nothing.** `fit` over the seven captures against
+  the table index (4, 5, 4, 11, 12, 5, 4) and the grid cell (1, 2, 1, 8, 9,
+  2, 1) gave twelve survivors each and no byte-sized ramp, so if the game
+  keeps the highlight as a number it is wider than a byte or not a plain
+  index. Against the column (two values) `0x00C183D4` fitted, and against
+  the row `0x00436F07`, `0x00536F87` and `0x00C183DC`; two distinct values
+  is parity, not evidence, and none is shipped or verified.
+- **Dragon Tournament's entry screen is a separate entry.** The same sprite
+  is loaded at `0x009D8C52` there, 0xA37E above Dueling's, and neither
+  address matches the other mode's captures. The name table sits at
+  `0x00BF8E80` in that mode, another reason to read it through the pointer.
+  Only the first draw slot is a name; the second held "Return to Character
+  Select" from a menu already left, and is not read. One visit, one capture:
+  `tourn0`.
+- **Unmeasured.** The marker after leaving: the log shows the main menu
+  named after Dueling, so the Dueling marker at least does not linger, but no
+  capture was taken by that route. The same screen in Ultimate Battle Z. What
+  happens to the announcements when a player picks Random or a locked slot.
+
+Captures: `charsel0`, `csel0`-`csel6` (player 1 moving), `csel_p2` (player 1
+confirmed, player 2 at rest), `csel20`-`csel26` (player 2 moving), with the
+`*_cues.txt` beside each scan. The scan tools take `--prefix` as of the same
+day, because their default names were the Select Scenario archive.
+
 ## Screens seen but not mapped
 
 - **Dragon Library** -- detected only.
@@ -1372,8 +1458,15 @@ Level was added, and each cost a bug that only a live run revealed.
    Before hunting for a marker at all, diff the new capture against the nearest
    mapped screen: if a region is identical between them, nothing in it can be a
    marker, and that one measurement saves an afternoon.
-4. **Find the cursor**: `pressscan` for a wrapping menu driven by one repeated
-   key, `positionscan` plus `fit` otherwise. Expect two copies -- a plain count
+4. **Find the cursor -- or find that none is needed.** If the screen draws
+   the highlighted entry's label as text, `story.displayed` on two captures at
+   different positions says so at once: the pointer follows the highlight.
+   The character select was mapped that way on 2026-09-08 with no cursor
+   address at all, from the same seven captures a cursor hunt would have
+   used, and the hunt itself found nothing. Check this before anything below.
+   Otherwise `pressscan` for a wrapping menu driven by one repeated
+   key, `positionscan --prefix=NAME` plus `fit ... --prefix=NAME` -- the
+   default names are the Select Scenario archive. Expect two copies -- a plain count
    in the screen's own allocation and a multiplied one in static memory. Wire
    both and cross-check them; one address cannot tell a correct read from a
    drifted one.

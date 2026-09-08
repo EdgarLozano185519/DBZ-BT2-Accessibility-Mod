@@ -4,13 +4,16 @@ Screen reader support for Dragon Ball Z: Budokai Tenkaichi 2, played in PCSX2.
 Read this first when resuming. Details of every address live in
 `docs/memory-map.md`.
 
-Last updated: 2026-09-07.
+Last updated: 2026-09-08.
 
 ## What works today
 
 Menus speak through NVDA, driven by the game's own memory:
 
-- **Title screen** -- New Game / Load Game.
+- **Title screen** -- New Game / Load Game. Its marker is a raw byte
+  signature, and as of 2026-09-08 it has been caught on three screens that
+  were not the title. It is now refused whenever the game is drawing text,
+  which it never does on the title capture and always did on the three.
 - **Main Menu** -- all ten options, Dragon Adventure through Dragon Library.
   It stopped being recognised on 2026-09-07 and read out the option subtitles
   instead. The cause is now known and measured: a Select Scenario marker that
@@ -32,6 +35,25 @@ Menus speak through NVDA, driven by the game's own memory:
   shifts the others nor leaves the new one unnamed. Proven by a real unlock the
   same day, and the reason this part of the guide can be handed to someone else.
   See *When you unlock a scenario* below.
+- **Character Select** -- the two-player grid in Dueling, added 2026-09-08.
+  Each player's highlighted character is spoken as their cursor moves, in
+  either axis. The names are read from the text the game is drawing, through
+  two pointers of the kind the story reader uses -- one per name panel -- so
+  there is no cursor address and no table of names: nothing was transcribed
+  and nothing is tied to English. **Player 1 was heard in play the same day**,
+  forty names in the log. Player 2 went silent in play, was traced to the
+  second pointer, and is verified against seven screenshots; **not yet heard
+  through the guide app.** The first move on player 2's side is announced as
+  "Player 2: name", later ones bare. Before this the mod announced
+  **"New Game"** over the grid, by the title screen's weak signature -- the
+  same fault Game Level had.
+- **Tournament Character Select** -- Dragon Tournament's entry screen, added
+  2026-09-08 after it was silent in play. Same portraits, one name panel,
+  read through the first pointer only. Its marker is the same sprite at a
+  different address, seen on one visit. The log for that session also shows
+  the mod flickering between "Unknown screen" and "New Game" there, which is
+  what closed the title-marker hole above. **Heard in play the same day**:
+  the log holds the screen's name and four fighters after it.
 - **C teaches this map's scale by teleporting, so T can reach the story
   marker.** Added and **confirmed in play 2026-09-07**, twice on the Blue
   landmass map, after which T reached the story objective. Six short commanded
@@ -142,6 +164,14 @@ knowing about. Item 3 under Next steps has the detail.
 `python source/tools/build_release.py --release=YYYY.MM.DD-rN` stamps
 `BUILD-INFO.json` and regenerates `SHA256SUMS.txt`. `--check` verifies without
 changing anything and is the fast way to ask whether the folder is coherent.
+
+Two more things per release, both learned on 2026-09-08. Bump `WORKER_VERSION`
+in `guide_host.py` *before* rebuilding the worker -- it is what the log's
+first line and the spoken greeting report, and it had sat at 2026.09.05-r4
+through a later stamp. And the release zip is the manifest's files plus
+`SHA256SUMS.txt`, built by `source/tools/make_release_zip.py` into the repo
+root as `DBZ-BT2-Guide-<release>.zip`; zips are git-ignored so the GitHub
+release stays separate from the source history.
 
 **It refuses to stamp if any runtime source is newer than the worker.** Editing
 `bt2/*.py` changes nothing until the worker is rebuilt, and a release in that
@@ -321,10 +351,11 @@ above has incidentally made this much stricter: a stale pointer left aiming at
 menu text after a scene ends is now refused by address as well as by content.
 The remaining exposure is a stale pointer still inside the scene buffer.
 
-**4. Should this be stamped as a release?** The worker is rebuilt and deployed
-but `BUILD-INFO.json` and `SHA256SUMS.txt` still describe the previous build.
-Stamping is one command and is the player's call, not something to do because
-the code changed.
+**4. ~~Should this be stamped as a release?~~** Done: 2026.09.08-r1, at the
+player's request, with a release zip built beside it. The spoken version in
+`guide_host.py` had been left at 2026.09.05-r4 through the 09.07 stamp and is
+bumped with this one; the log's first line is what shows which build a player
+is actually running, so it should move with every stamp.
 
 **5. Should the captures be pruned?** `reference/probe` is now **892 MB**, 27
 snapshots at 31 MB each, and it is git-ignored so it costs nothing but disk.
@@ -513,9 +544,29 @@ them -- see Testing with the player.
   that used to fail; it should now name the screen and read its options.
 - **The Dragon Library marker, in a second run.** It rests on a single visit,
   unlike the main menu's and Options'.
+- **Player 2 on the character select, through the guide app.** Player 1
+  has been heard in play; player 2's pointer was verified on seven cued
+  presses but not through the app. Confirm player 1, move on the lower grid:
+  the first move should say "Player 2: name" and later ones just the name.
+- **The tournament entry screen on a second visit**: it has been heard in
+  play, but its marker rests on one capture and one visit.
+- **The title screen, after the new rule.** It is only ever reached on a
+  fresh boot, and the rule that refuses its marker while text is on screen
+  was measured on captures, not heard. Boot the game with the guide running:
+  it should still say "Title" and "New Game".
+- **The main menu after Dueling.** The character select's marker sits in the
+  dynamic region, which is torn down between screens for every screen seen so
+  far, but no capture has been taken by that route. Reaching the main menu
+  after Dueling is the transition that would show a stale marker, exactly as
+  it did for Select Scenario. If the main menu goes quiet there, that is
+  where to look, and the log will name the collision.
 
 ### 6. Map the remaining screens
 
+- **The character select in Ultimate Battle Z.** Dragon Tournament turned
+  out to load the same sprite at a different address, so Ultimate Battle Z
+  probably does too. One `check` on that screen says where, and one line
+  adds it; the Dueling and Tournament entries are the pattern.
 - **The story event list**, inside Dragon Adventure -- the screen between
   Select Scenario and Game Level, where the player is still choosing blind.
   Now clearly the highest value of the three: it is both a silent screen and
@@ -687,6 +738,13 @@ in the picture.
 menu through Windows OCR settles whether this font is legible to it at all. If
 it is not, the question is closed for half an hour's work.
 
+**One screen has since come off this list without OCR.** The character select
+looked like another artwork menu and was not: its names are drawn as text, and
+the game's own pointer to that text followed the highlight. **Check for that
+first on every remaining silent screen** -- read `story.displayed` on two
+captures at different positions -- because where it holds, the screen costs
+one cued scan and no table at all.
+
 ### Also worth doing
 
 - **The N and B latch is fixed, and it was a real one.** Choosing a destination
@@ -753,6 +811,46 @@ it is not, the question is closed for half an hour's work.
   refuses garbage and move-list glyphs without knowing a single word.
 
 ## Recently finished
+
+### 2026-09-08: the character select speaks, and needed no cursor
+
+- **Player 1's highlighted character is announced** on the Dueling grid,
+  read from the game's own text. `0x008C6244`, the pointer the story reader
+  and F12 already use, aimed at the highlighted name in all eight captures --
+  one taken before the cued scan, seven during it, across both axes -- each
+  checked against its screenshot. No cursor address, no table of names,
+  nothing transcribed. Confirmed live through `dryrun`.
+- **The mod had been calling this screen the Title screen**, by the weak byte
+  signature that fooled it on Game Level, and would have said "New Game" over
+  the grid. A named marker for the screen now outranks it.
+- **The names are in the game's own table** -- 135 UTF-16 entries at
+  `0x00D61C00`, Goku through "Password Character" -- and some carry a badge
+  glyph after the name that the story alphabet refused, which is the only
+  reason F12 said nothing on Goku. A trailing badge is now dropped; the same
+  glyph mid-line stays refused, because a battle once drew one.
+- **Player 2 was silent in play, and the log said so in one line**: forty
+  player 1 names, then nothing after the confirm. The pointer stayed on
+  player 1's choice. A search of every capture for words pointing into the
+  name table found exactly two: that pointer and a second draw structure
+  0x98 bytes after it, aimed at player 2's name. It was found from captures
+  in which player 2 had never moved, so a second cued scan of seven presses
+  on player 2's grid was run before shipping it, and it matched every
+  screenshot while player 1's stayed put. The reader now watches both.
+- **A search for the highlighted index found no byte-sized ramp** across the
+  seven captures, and it was not needed. Two weak candidates for the column
+  and row are recorded in `docs/memory-map.md`, unverified and unshipped.
+- **`positionscan` and `fit` take `--prefix`**, because their default file
+  names are the Select Scenario archive that `test_menus.py` checks. Running
+  the old tool on a new screen would have overwritten the evidence for an old
+  one.
+- **Dragon Tournament's entry screen was silent, then said "New Game".**
+  Both from one log: the Dueling marker is at a different address in this
+  mode, so the screen went unnamed, and the title signature flickered on
+  over it. It has its own entry now, reading one name pointer -- the second
+  draw slot holds stray menu text there and would have been announced as a
+  player 2. And the title signature is refused while the game draws text,
+  which every misnamed screen did and the title capture does not.
+- 349 checks in `test_menus.py` over 44 captures, 46 in `test_story.py`.
 
 ### 2026-09-07, in one paragraph
 

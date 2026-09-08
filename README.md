@@ -86,6 +86,15 @@ automatically. **NVDA is not bundled** — install it yourself if you want it.
   Down
 - **Game Level**, the difficulty chooser reached after picking a story event in
   Dragon Adventure — Level 1, 2 or 3, chosen with Left and Right
+- **Character Select** in Dueling — every fighter on the grid, for both
+  players. The first move on player 2's side says "Player 2" first, so you
+  know which panel is speaking
+- **Tournament Character Select**, the Dragon Tournament entry screen — every
+  fighter on the strip
+
+The character names are read from the game's own text as it draws them, so
+every fighter on the disc is covered without a list, and a badge the game
+draws after some names is left out.
 
 The scenario names are pictures on screen rather than words, but the game keeps
 its own list of them in memory, and every one on the disc ships with the guide.
@@ -261,8 +270,9 @@ indistinguishable from "working, nothing to say":
 - **The story event list does not speak.** The scenario list before it now
   does, and the difficulty screen after it does, but choosing the individual
   event between them is still done blind
-- Dragon Library is named but its entries are not read. Ultimate Battle Z, the
-  item shop, character select and battle menus are not recognised at all
+- Dragon Library is named but its entries are not read. Ultimate Battle Z,
+  the item shop and battle menus are not recognised at all; Ultimate Battle
+  Z's character select probably needs one line to add, but has not been seen
 - **The scenario descriptions are not read.** The introduction to each Dragon
   Adventure scenario sits in the game's memory and can be found. The guide now
   knows which scenario is highlighted, so this has become possible; what is
@@ -305,6 +315,12 @@ relevant log. Review logs before sharing; they can contain your map names and
 local paths. **Do not send game dumps, BIOS files or saves.**
 
 ## About this build
+
+**2026.09.08-r1** adds the two character selects above, and closes a fault
+that had the guide say "New Game" over screens that were not the title: the
+title screen's marker is now refused while the game is drawing text. Player
+1 and the tournament screen have been heard in play; player 2 is verified
+against screenshots and not yet heard through the app.
 
 This release omits the 44 `api-ms-win-*.dll` compatibility stubs that release
 2026.09.05-r4 carried. They forward to the Universal C Runtime, which ships
@@ -354,7 +370,10 @@ option, so the words come from tables in `bt2/menus.py` -- the only place that
 text exists, and the only thing that can be translated.
 
 **Prose is the opposite.** On-screen subtitles are held as verbatim UTF-16LE, so
-those are read from the game rather than authored.
+those are read from the game rather than authored. So are the character
+names on the select screens: the game draws them as text, and its own pointer
+to that text follows the highlight, which is why those screens have no cursor
+address and no table. Check for that before hunting a cursor on any screen.
 
 Getting this backwards wastes a lot of time. `docs/memory-map.md` records the
 evidence for both, every verified address, and -- just as importantly -- the
@@ -430,7 +449,9 @@ is coherent.
   event. `positionscan` captures after each *named* key press; `fit` finds the
   addresses that behave like an index. Read the positions back off the paired
   screenshots rather than assuming the presses landed — one missed press
-  poisons the correlation while the run still looks clean.
+  poisons the correlation while the run still looks clean. Give each screen
+  its own `--prefix`; the default names are the Select Scenario archive that
+  `test_menus.py` checks.
 - **`dryrun`** — runs the real guide loop with a recording speaker and prints
   every line it would say. The mod's whole output is speech, which otherwise
   cannot be checked without the player sitting at the controls.
