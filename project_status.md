@@ -26,11 +26,11 @@ Menus speak through NVDA, driven by the game's own memory:
   name as well, which was the first event's name whatever the player had
   chosen; that is gone as of 2026-09-07.
 - **Select Scenario** -- the Dragon Adventure scenario list: Saiyan Saga, Tree
-  of Might and Fateful Brothers on this save, chosen with Up and Down.
-  **Confirmed live on all three rows 2026-09-07**, each against a screenshot.
-  Its cursor was wrong from the day it was mapped and only showed it when a
-  third scenario unlocked; the names are now keyed by how long the list is,
-  because the game **inserts** rather than appends.
+  of Might, Lord Slug and Fateful Brothers on this save, chosen with Up and
+  Down. **Confirmed live on all four rows 2026-09-07**, each against a
+  screenshot. The names are keyed by how long the list is, because the game
+  **inserts** rather than appends -- twice now. **Unlocking a scenario costs
+  one minute**: see *When you unlock a scenario* below.
 - **C teaches this map's scale by teleporting, so T can reach the story
   marker.** Added and **confirmed in play 2026-09-07**, twice on the Blue
   landmass map, after which T reached the story objective. Six short commanded
@@ -104,6 +104,30 @@ screen text. Not a gap to close -- but if a refused line ever turns up in the
 log beside a save the player expected to hear, its address is right there and
 the rule can be widened by measurement.
 
+## When you unlock a scenario
+
+The scenario list will say **"Scenario 2 of 5, name not known."** the first time
+it is longer than a list the mod has names for. That is the guard working, not
+a fault: the game inserts new scenarios in the middle, so a table written for
+four is wrong at five, and guessing would rename scenarios that were already
+there.
+
+Fixing it takes about a minute, with the guide app closed and PCSX2 on the
+Select Scenario screen:
+
+    cd source/tools
+    ..\..\.venv\Scripts\python.exe menu_probe.py rowscan B0536C B05370 --seconds=60
+
+It counts down aloud, then says "move through every row". Press Down, pause a
+second or two, and go round the list twice. It photographs each row, and the
+names are then read off those pictures and added to `labels_by_count` in
+`bt2/menus.py` as a new entry for that length. Nothing else changes, and the
+older tables stay -- they are what keep the older captures meaningful.
+
+**Why it cannot be automatic:** the names are pre-rendered artwork, and there
+is no scenario identity anywhere in memory to hang them on. That was searched
+for properly and the negative is recorded in `docs/memory-map.md`.
+
 ## Releasing
 
 `python source/tools/build_release.py --release=YYYY.MM.DD-rN` stamps
@@ -158,7 +182,7 @@ numpy/scipy/Pillow) for testing menus without the full guide.
 **The offline suites need no emulator, no game and no player**, and are the
 first thing to run after changing any of this:
 
-    ..\..\.venv\Scripts\python.exe test_menus.py    # 126 checks, 22 captures
+    ..\..\.venv\Scripts\python.exe test_menus.py    # 162 checks, 26 captures
     ..\..\.venv\Scripts\python.exe test_story.py    # 44 checks
     ..\..\.venv\Scripts\python.exe test_mapcal.py   # 30 checks
 
@@ -596,6 +620,27 @@ manufactured offline.
   refuses garbage and move-list glyphs without knowing a single word.
 
 ## Recently finished
+
+### 2026-09-07: a fourth scenario, and the search for an identity
+
+- **Lord Slug unlocked at index 2**, moving Fateful Brothers from 2 to 3. The
+  second insertion in a day, and the second time appending a name would have
+  renamed scenarios that were already there. All four rows read live against
+  screenshots; the mod names them again.
+- **No canonical scenario identity exists**, which was searched for properly
+  rather than assumed either way: no byte and no 16-bit value survives Fateful
+  Brothers moving through rows 1, 2 and 3, the 32-bit survivors are two small
+  fields whose values already collide between scenarios, and there is no
+  unlocked-set bitmask or per-scenario flag array anywhere in EE RAM. Written
+  up in `docs/memory-map.md` so nobody repeats it -- and re-testable at the
+  next unlock, where the 32-bit candidates should collide and close it.
+- **So a table per list length stands**, and what makes that tolerable is that
+  re-deriving one is now a minute of pressing Down. Written up for the player
+  under *When you unlock a scenario*.
+- **`rowscan --capture`** keeps the RAM as well as the picture, and throws away
+  any capture the player moved during rather than pairing a picture of one row
+  with a capture of another.
+- 162 checks in `test_menus.py`, over 26 captures.
 
 ### 2026-09-07: the scenario list, and a cursor that was never one
 

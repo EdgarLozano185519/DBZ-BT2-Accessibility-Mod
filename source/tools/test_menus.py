@@ -2,7 +2,7 @@
 
 No emulator, no player.  The captures in `reference/probe` are real EE RAM with
 a screenshot beside each one, so which screen each of them *is* was read off a
-picture rather than out of the code under test.  Twenty-one of them, covering
+picture rather than out of the code under test.  Twenty-six of them, covering
 six screens and a cutscene, which is enough to insist that every marker matches
 its own screen and no other.
 
@@ -40,6 +40,12 @@ CAPTURES = {
     "posn4": "Select Scenario",
     "posn5": "Select Scenario",
     "pos0": "Title",
+    # The scenario list at each of its four rows, once a fourth unlocked.
+    "row0": "Select Scenario",
+    "row1": "Select Scenario",
+    "row2": "Select Scenario",
+    "row3": "Select Scenario",
+    "scen3_fb": "Select Scenario",
     "cut0": None, "cut1": None, "cut2": None, "cut3": None,
     "cut4": None, "cut5": None, "cut6": None, "cut7": None,
 }
@@ -438,6 +444,17 @@ LIVE_ROWS = [
     ("Tree of Might", 1, 3, 1),
 ]
 
+# The same again once a fourth scenario unlocked, from row0-3.png. Lord Slug
+# was inserted at index 2 and moved Fateful Brothers from 2 to 3 -- the second
+# insertion this screen has seen. Note the last column: the refuted address
+# reads 0, 1, 0, 1 here, which is what it always was.
+LIVE_ROWS_FOUR = [
+    ("Saiyan Saga", 0, 4, 0),
+    ("Tree of Might", 1, 4, 1),
+    ("Lord Slug", 2, 4, 0),
+    ("Fateful Brothers", 3, 4, 1),
+]
+
 
 def test_the_grown_scenario_list() -> None:
     """Three scenarios, and the new one was inserted rather than appended."""
@@ -479,28 +496,66 @@ def test_the_grown_scenario_list() -> None:
               f"said {menu.speaker.said}")
 
 
-def test_a_fourth_scenario_is_not_guessed_at() -> None:
-    """A length with no table of its own must yield no names at all.
+def test_the_four_entry_list() -> None:
+    """Four scenarios, each row read against its own capture and screenshot.
 
-    Extending the table rather than re-deriving it is the trap this screen has
-    already sprung once: Tree of Might landed at index 1 and moved Fateful
-    Brothers to 2, so an appended third name would have renamed both of the
-    scenarios that were already there, confidently and silently.
+    Every row here has its own 31 MB capture, so unlike the three-entry case
+    these are not patched -- the reader is answering the game's own memory.
     """
-    print("\nWhen a fourth scenario unlocks:")
-    base = load("scen3_fb")
-    if base is None:
-        check("scen3_fb present", False, "capture missing")
-        return
+    print("\nThe scenario list once a fourth unlocked, row by row:")
     scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
-    for row in range(4):
-        pine = PatchedPine(base, {scenario.cursor: bytes([row]),
-                                  scenario.count_address: b"\x04"})
+    for index, (shown, cursor, count, refuted) in enumerate(LIVE_ROWS_FOUR):
+        pine = load(f"row{index}")
+        if pine is None:
+            check(f"row{index} present", False, "capture missing")
+            continue
+        check(f"row{index} really is cursor {cursor} of {count}",
+              pine.read8(scenario.cursor) == cursor
+              and pine.read8(scenario.count_address) == count)
+        check(f"row{index}'s refuted address reads {refuted}",
+              pine.read8(0x00D53625) == refuted)
         menu = reader()
         for tick in range(4):
             menu.poll(pine, tick * 0.1)
-        want = ["Select Scenario", f"Scenario {row + 1} of 4, name not known."]
-        check(f"row {row} of four says its position, not a name",
+        check(f"{shown} is named", menu.speaker.said == ["Select Scenario", shown],
+              f"said {menu.speaker.said}")
+
+    refuted = {row[3] for row in LIVE_ROWS_FOUR}
+    check("the refuted address cannot tell four rows apart",
+          len(refuted) < len(LIVE_ROWS_FOUR), f"took values {sorted(refuted)}")
+
+    # Both insertions, stated as the tables themselves.
+    tables = scenario.labels_by_count
+    check("Fateful Brothers has been pushed along by every unlock",
+          [tables[n][n - 1] for n in (2, 3, 4)]
+          == ["Fateful Brothers"] * 3)
+    check("and Saiyan Saga has stayed at the front",
+          [tables[n][0] for n in (2, 3, 4)] == ["Saiyan Saga"] * 3)
+
+
+def test_a_fifth_scenario_is_not_guessed_at() -> None:
+    """A length with no table of its own must yield no names at all.
+
+    Extending the table rather than re-deriving it is the trap this screen has
+    now sprung twice: Tree of Might landed at index 1 and moved Fateful
+    Brothers to 2, then Lord Slug landed at index 2 and moved it to 3. An
+    appended name would have renamed scenarios that were already there, both
+    times, confidently and silently.
+    """
+    print("\nWhen a fifth scenario unlocks:")
+    base = load("row0")
+    if base is None:
+        check("row0 present", False, "capture missing")
+        return
+    scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
+    for row in range(5):
+        pine = PatchedPine(base, {scenario.cursor: bytes([row]),
+                                  scenario.count_address: b"\x05"})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        want = ["Select Scenario", f"Scenario {row + 1} of 5, name not known."]
+        check(f"row {row} of five says its position, not a name",
               menu.speaker.said == want, f"said {menu.speaker.said}")
 
     # A length the game has not finished writing is not an answer either.
@@ -584,7 +639,8 @@ def main() -> int:
     test_a_stale_marker_loses()
     test_a_silent_row_explains_itself()
     test_the_grown_scenario_list()
-    test_a_fourth_scenario_is_not_guessed_at()
+    test_the_four_entry_list()
+    test_a_fifth_scenario_is_not_guessed_at()
     test_a_moved_block()
     test_unmoved_captures_are_not_searched()
 

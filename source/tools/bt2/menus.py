@@ -554,21 +554,37 @@ SCREENS = [
         # address is kept because it is the only one that separates this
         # screen from Game Level, and it is now outranked rather than trusted.
         marker_outlives_screen=True,
-        # **The game inserts, it does not append.** Tree of Might unlocked and
-        # landed at index 1, moving Fateful Brothers from 1 to 2 -- the exact
-        # case these notes warned about, where extending the old table would
-        # have renamed both of the scenarios that were already there. So the
-        # names are keyed by how long the list is, and a length with no table
-        # of its own yields no names at all rather than the nearest ones.
-        # `0x00B05370` reads that length: 2 on all seven two-entry captures,
-        # 3 on all three rows of the three-entry list.
+        # **The game inserts, it does not append**, and it has now done so
+        # twice. Tree of Might landed at index 1, moving Fateful Brothers from
+        # 1 to 2; Lord Slug then landed at index 2, moving it to 3. Extending
+        # the old table either time would have renamed scenarios that were
+        # already there. So the names are keyed by how long the list is, and a
+        # length with no table of its own yields no names at all rather than
+        # the nearest ones. `0x00B05370` reads that length: 2 on all seven
+        # two-entry captures, 3 on all three rows of the three-entry list, and
+        # 4 on all four rows of the four-entry one.
         #
-        # Extending this is therefore not a matter of appending a name. Run
-        # `menu_probe.py rowscan D53625 B0536C B05370` on the grown list, read
-        # the rows off the screenshots it saves, and write a new table.
+        # Every table here was read off a screenshot of the row it names, and
+        # each one also has to explain the rows drawn above and below, since
+        # the list wraps with the highlighted row centred. Sixteen facts for
+        # the four-entry table, not four.
+        #
+        # **No canonical scenario identity exists to escape this**, which was
+        # looked for properly and is written up in docs/memory-map.md: no byte
+        # or 16-bit value survives, the 32-bit survivors are two small fields
+        # whose values already collide between scenarios, and there is no
+        # unlocked-set bitmask or flag array anywhere in EE RAM. So extending
+        # this is not a matter of appending a name. On the grown list run
+        #
+        #     menu_probe.py rowscan B0536C B05370 --seconds=60
+        #
+        # read the rows off the screenshots it saves, and write a new table.
+        # It takes about a minute and needs the player only to press Down.
         labels_by_count={
             2: {0: "Saiyan Saga", 1: "Fateful Brothers"},
             3: {0: "Saiyan Saga", 1: "Tree of Might", 2: "Fateful Brothers"},
+            4: {0: "Saiyan Saga", 1: "Tree of Might", 2: "Lord Slug",
+                3: "Fateful Brothers"},
         },
         # A row with no name means the list has grown again. Say which row it
         # is and how many there are, and admit the name is missing -- that is

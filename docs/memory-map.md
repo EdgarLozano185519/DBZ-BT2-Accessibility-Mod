@@ -395,9 +395,9 @@ stays centred and the names scroll through it. On this save it now holds
   the day this screen was mapped. `0x00D53634` carries a value related to it,
   also useless.
 
-- `0` Saiyan Saga, `1` Tree of Might, `2` Fateful Brothers -- **for a list of
-  three**. See the unlock section below: these names are true for one list
-  length only.
+- `0` Saiyan Saga, `1` Tree of Might, `2` Lord Slug, `3` Fateful Brothers --
+  **for a list of four**. See the unlock section below: these names are true
+  for one list length only, and there are separate tables for two and three.
 
 ### The cursor was wrong, and a two-entry list could not show it
 
@@ -433,17 +433,29 @@ with cues, then `fit 1,2,3,1,2,3` from the screenshots -- which costs the
 player a couple of minutes and 31 MB per press. Worth doing before this screen
 is next changed; not done unasked.
 
-### The game inserts, it does not append
+### The game inserts, it does not append -- twice now
 
 **Tree of Might unlocked at index 1**, moving Fateful Brothers from 1 to 2.
-This is the case these notes flagged as the dangerous one, and it happened:
+Then **Lord Slug unlocked at index 2**, moving it to 3:
 
-    two entries      0 Saiyan Saga    1 Fateful Brothers
-    three entries    0 Saiyan Saga    1 Tree of Might      2 Fateful Brothers
+    two entries      0 Saiyan Saga  1 Fateful Brothers
+    three entries    0 Saiyan Saga  1 Tree of Might  2 Fateful Brothers
+    four entries     0 Saiyan Saga  1 Tree of Might  2 Lord Slug
+                                                     3 Fateful Brothers
 
-So **extending the table would have been wrong**. Appending "Tree of Might" as
-index 2 would have renamed both scenarios that were already there, confidently
-and silently -- the failure this project treats as worse than silence.
+So **extending the table would have been wrong both times**. Appending the new
+name would have renamed scenarios that were already there, confidently and
+silently -- the failure this project treats as worse than silence.
+
+Each table was read off a screenshot of the row it names, and each also has to
+explain the rows drawn above and below, since the list wraps with the
+highlighted row centred: sixteen facts for the four-entry table, not four.
+
+Saiyan Saga has stayed first and Fateful Brothers last through all three
+lengths, and both new scenarios arrived second from last. **That is an
+observation, not a rule to name rows by** -- three lengths is exactly the sort
+of pattern that has already misled this project twice, and a wrong name is
+worse than an admitted gap.
 
 The names are therefore keyed by how long the list is, and `0x00B05370` reads
 that length: 2 on all seven two-entry captures, 3 on all three rows of the
@@ -451,6 +463,42 @@ three-entry list. A length with **no table of its own yields no names at all**,
 and the row says its position instead -- "Scenario 2 of 4, name not known." A
 length outside 1 to `MAX_UNNAMED_ROW` is treated as a screen still loading and
 read again rather than acted on.
+
+### No canonical scenario identity exists -- three searches, all negative
+
+Searched 2026-09-07, once four scenarios and their captures were available.
+The prize would have been permanent: an identity that survives insertion means
+a name learned once stays right for ever, and it is also the missing index that
+would unlock the 26 scenario synopses. It is not there.
+
+The test is sharp because Fateful Brothers has been row 1 of two, row 2 of
+three and row 3 of four. An identity reads the same in all of them; a row index
+cannot.
+
+- **No byte.** 99 addresses are steady per row and differ between rows; 87
+  survive Saiyan Saga; **none** survives Fateful Brothers across the three
+  lengths.
+- **No 16-bit value**, at either alignment.
+- **Eight 32-bit survivors, all spurious.** They are two small fields read
+  together -- one alternating, one reading 0, 0, 0x40, 0x80 over the four
+  scenarios -- so Saiyan Saga and Tree of Might already share the second field.
+  Four values from a two-field code is arithmetic, not identity, and it would
+  collide at the fifth scenario. Rejected on that ground rather than on taste.
+- **No unlocked-set bitmask**: nothing of any width holds exactly two, three
+  and four set bits across the three states while staying steady as the cursor
+  moves. **And no flag array**: no run of 32 bytes holding only 0 or 1 has two,
+  three then four of them set.
+
+The 15 single-byte near-misses are in graphics buffers and cannot encode 26
+scenarios; with 31 million addresses and a filter this loose they are what
+chance produces.
+
+**What this costs**: a table per list length, re-derived at each unlock. What
+makes that tolerable is `menu_probe.py rowscan`, which turns it into about a
+minute with the player only pressing Down. **What would settle it for good**:
+the next unlock. Re-run the searches with a five-entry list and the two-field
+32-bit candidates above should collide, which would close the question rather
+than leave it open.
 
 Hearing "name not known" is the signal that the list has grown again and every
 name on this screen must be **re-derived, not extended**: run `menu_probe.py
