@@ -698,7 +698,7 @@ def _correlate(
 
 
 def rowscan(screen_name: str, addresses: list[int], seconds: float = 45.0,
-            lead: int = 10, period: float = 0.1) -> int:
+            lead: int = 10, period: float = 0.1, capture: bool = False) -> int:
     """Photograph every row the player visits, beside the bytes that changed.
 
     `positionscan` answers the same question by capturing all 31 MB after each
@@ -710,7 +710,12 @@ def rowscan(screen_name: str, addresses: list[int], seconds: float = 45.0,
     cue schedule to mis-follow -- the player just moves and every state they
     pass through is recorded.
 
-    It writes `row*.png` and never touches the `posn*` archive.
+    With `--capture` it also writes all 31 MB beside each screenshot, which is
+    what a search for a *new* address needs -- the light form can only measure
+    addresses already known.  A capture takes about a second, so the player
+    still just moves through the rows.
+
+    It writes `row*.png`, `row*.bin` and never touches the `posn*` archive.
     """
     from probe_voice import Voice
     from bt2 import vision
@@ -755,6 +760,28 @@ def rowscan(screen_name: str, addresses: list[int], seconds: float = 45.0,
                     vision.capture_game_window().save(STORE / f"{name}.png")
                 except Exception as error:
                     print(f"  (screenshot failed: {error})")
+                if capture:
+                    chunks = []
+                    for address in range(DEFAULT_BASE, FULL_END, CHUNK_BYTES):
+                        size = min(CHUNK_BYTES, FULL_END - address)
+                        chunks.append(client.read_aligned_range(
+                            address, size, allow_large=True))
+                        time.sleep(CHUNK_PAUSE)
+                    # A capture takes about a second, and the player may press
+                    # a key inside it. A capture of one row beside a
+                    # screenshot of another is worse than no capture at all --
+                    # it is the kind of quiet mismatch that poisons a whole
+                    # correlation while looking fine, so it is thrown away.
+                    after = tuple(client.read8(a) for a in addresses)
+                    if after == values:
+                        (STORE / f"{name}.bin").write_bytes(b"".join(chunks))
+                    else:
+                        print(f"  ({name}: moved mid-capture, RAM discarded; "
+                              "revisit this row)")
+                        voice.say("Moved too soon. Visit that row again.")
+                        (STORE / f"{name}.png").unlink(missing_ok=True)
+                        last, settled = after, 0
+                        continue
                 seen.append((values, name))
                 print(f"  {name}: " + "  ".join(
                     f"0x{a:08X}={v}" for a, v in zip(addresses, values)))
@@ -1238,7 +1265,8 @@ def main(argv: list[str]) -> int:
         if not addresses:
             print("FAILED: give addresses in hex, e.g. rowscan D53625 B0536C")
             return 1
-        return rowscan(target, addresses, seconds, lead)
+        return rowscan(target, addresses, seconds, lead,
+                       capture="--capture" in argv)
     if command == "watch":
         addresses = [int(a, 16) for a in argv[2:] if not a.startswith("-")]
         if not addresses:
