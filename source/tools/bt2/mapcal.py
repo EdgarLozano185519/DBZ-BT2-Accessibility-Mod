@@ -218,13 +218,33 @@ def solve_from_samples(samples):
     return winners[0], None
 
 
-def map_bounds(locations):
-    """The coordinate table's own extent, which is the map the arrow is drawn on."""
-    if not locations:
+# With no table -- or one point, which has no extent -- the hops are planned
+# inside a square of this half-width around the player.  Every map measured so
+# far spans 3000 to 4000 units, so this sizes the probe the same way a table
+# would, without knowing where the map's edges are.  A player near an edge is
+# still protected: an arrow pinned against the panel gives inconsistent deltas,
+# and the cross-check refuses those.
+DEFAULT_HALF_SPAN = 2000.0
+
+
+def map_bounds(locations, home=None):
+    """The coordinate table's own extent, which is the map the arrow is drawn on.
+
+    Falls back to a fixed square around ``home`` when the table cannot supply
+    one; None only when neither is available.
+    """
+    if len(locations) >= 2:
+        xs = [location.x for location in locations]
+        zs = [location.z for location in locations]
+        return (min(xs), min(zs), max(xs), max(zs))
+    if home is None:
         return None
-    xs = [location.x for location in locations]
-    zs = [location.z for location in locations]
-    return (min(xs), min(zs), max(xs), max(zs))
+    return (
+        home[0] - DEFAULT_HALF_SPAN,
+        home[1] - DEFAULT_HALF_SPAN,
+        home[0] + DEFAULT_HALF_SPAN,
+        home[1] + DEFAULT_HALF_SPAN,
+    )
 
 
 def clear_of_destinations(point, locations) -> bool:
@@ -257,9 +277,7 @@ def choose_quadrant(home, locations, reach):
     player was most likely to be: dead centre of point 7, where a teleport had
     just put them, with every hop size blocked by the place they were standing.
     """
-    bounds = map_bounds(locations)
-    if bounds is None:
-        return None, "this map has no coordinate table to measure against"
+    bounds = map_bounds(locations, home)
     margin_x = (bounds[2] - bounds[0]) * 0.05
     margin_z = (bounds[3] - bounds[1]) * 0.05
     reasons = []
@@ -286,9 +304,7 @@ def choose_quadrant(home, locations, reach):
 
 def plan_run(home, locations):
     """Pick the probe hop and the quadrant, or say why the spot will not do."""
-    bounds = map_bounds(locations)
-    if bounds is None:
-        return None, "this map has no coordinate table to measure against"
+    bounds = map_bounds(locations, home)
     span = max(bounds[2] - bounds[0], bounds[3] - bounds[1])
     if span < MIN_HOP_WORLD * 4:
         return None, "this map is too small to hop around safely"
@@ -400,9 +416,9 @@ class MapCalibration:
     # -- starting and stopping -------------------------------------------
     def start(self, surface, player, now: float) -> bool:
         """Begin a run, or say plainly why this map or this spot will not do."""
-        if surface.is_local or surface.is_vision_only or not surface.locations:
+        if surface.is_local or surface.is_vision_only:
             self.speaker.say(
-                "Calibration needs the world map and its destinations. "
+                "Calibration needs the world map with your position readable. "
                 "Nothing was started."
             )
             return False

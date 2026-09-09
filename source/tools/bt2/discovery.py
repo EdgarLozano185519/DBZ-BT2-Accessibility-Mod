@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 
 import struct
+import time
 from dataclasses import dataclass
 
 from . import memory as mem
@@ -34,15 +35,23 @@ from .memory import (
     PLAYER_RENDER_CANDIDATES,
     PLAYER_SIMULATION_CANDIDATES,
     discover_world_mirrors,
+    other_actor_location,
     parse_local_interaction,
     parse_table,
     parse_transform,
     player_transform_is_valid,
+    table_has_slot,
     table_is_live,
     vectors_match,
 )
 from .scan import TableScanner, choose_table, tables_in_window
-from .surface import LOCAL_EXIT, LOCAL_INTERACTION, Surface, world_surface
+from .surface import (
+    LOCAL_EXIT,
+    LOCAL_INTERACTION,
+    Surface,
+    tableless_world_surface,
+    world_surface,
+)
 
 
 class LiveMemory:
@@ -158,8 +167,35 @@ def discover_local_area(pine, verify_hud: bool = True, capture=None) -> Surface:
     )
 
 
-def discover_world_map(pine, scanner: TableScanner) -> Surface:
-    """Find the live coordinate table without assuming where it lives."""
+def _slotless_verdict(scanner: TableScanner, address: int, trust_slotless):
+    """Accept, reject, or defer a table that has no player slot.
+
+    Memory cannot tell whether such a table is current, so the minimap does:
+    ``trust_slotless`` is True when the settled census shows at least one free
+    destination, False when it shows none, None while it has not settled.  A
+    table already accepted this visit stays accepted while the census is
+    unsettled, which it is for a moment after every surface change, so a live
+    map does not flicker off and on.  A rejection lasts the visit.
+    """
+    if address in scanner.rejected:
+        return False
+    if trust_slotless is True or address == scanner.last_address:
+        return True
+    if trust_slotless is False:
+        scanner.reject(address)
+        return False
+    return None
+
+
+def discover_world_map(
+    pine, scanner: TableScanner, trust_slotless: bool | None = None
+) -> Surface:
+    """Find the live coordinate table without assuming where it lives.
+
+    When there is none -- a map whose only destinations are story markers
+    publishes no table at all -- the map is still a world map with a readable
+    player, and is returned as one.  See ``tableless_world_surface``.
+    """
     readings = dict(
         zip(
             PLAYER_SIMULATION_CANDIDATES + PLAYER_RENDER_CANDIDATES,
@@ -169,6 +205,9 @@ def discover_world_map(pine, scanner: TableScanner) -> Surface:
         )
     )
     mirror_set = discover_world_mirrors(readings)
+    now = time.monotonic()
+    if mirror_set.other is not None:
+        scanner.note_other(mirror_set.other, now)
 
     tiers = (
         scanner.targeted_windows(),
@@ -178,6 +217,8 @@ def discover_world_map(pine, scanner: TableScanner) -> Surface:
     # Every structurally valid table seen during the sweep, kept in case none
     # of them can be confirmed live. See the fallback below.
     structural: dict[int, tuple] = {}
+    # A slot-less table the minimap has not yet vouched for or against.
+    undecided = False
 
     for windows in tiers:
         for window in windows:
@@ -185,10 +226,18 @@ def discover_world_map(pine, scanner: TableScanner) -> Surface:
                 block = pine.read_aligned_range(window.base, window.size)
             except (ValueError, OSError):
                 continue
-            candidates = tables_in_window(block, window)
-            for candidate in candidates:
-                structural.setdefault(candidate[0], candidate)
             view = FlatMemory(window.base, block)
+            candidates = []
+            for candidate in tables_in_window(block, window):
+                address = candidate[0]
+                if not table_has_slot(view, address):
+                    verdict = _slotless_verdict(scanner, address, trust_slotless)
+                    if verdict is None:
+                        undecided = True
+                    if not verdict:
+                        continue
+                structural.setdefault(address, candidate)
+                candidates.append(candidate)
             # Liveness, not mere structural validity, decides.  A table whose
             # map is gone stays resident -- Earth's in particular, at the very
             # address the hint tier probes first -- so accepting the first
@@ -249,8 +298,22 @@ def discover_world_map(pine, scanner: TableScanner) -> Surface:
                 liveness_confirmed=False,
             )
 
-    raise MapNotReady(
-        "No coordinate table matching the live player position was found"
+    if undecided:
+        raise MapNotReady(
+            "A coordinate table with no player slot is waiting for the minimap "
+            "to vouch for it"
+        )
+
+    # No table describes this map. That is a real state, not a failure: the
+    # Namek map after the Zarbon fight draws one story marker and publishes no
+    # coordinate records at all, while the player's position reads perfectly
+    # well. What memory can still offer is any other character on the map.
+    other = scanner.other(now)
+    locations = (other_actor_location(other),) if other is not None else ()
+    return tableless_world_surface(
+        player_address=mirror_set.authoritative,
+        locations=locations,
+        mirrors=mirror_set.all_addresses,
     )
 
 
@@ -314,17 +377,23 @@ def choose_unconfirmed_table(candidates, player):
     return scored[0][1], scored[0][2]
 
 
-def discover_surface(pine, scanner: TableScanner, capture=None) -> Surface:
+def discover_surface(
+    pine, scanner: TableScanner, capture=None, trust_slotless: bool | None = None
+) -> Surface:
     """Return the active surface, preferring the stronger local signature."""
     try:
         return discover_local_area(pine, verify_hud=capture is not None, capture=capture)
     except MapNotReady:
         pass
-    return discover_world_map(pine, scanner)
+    return discover_world_map(pine, scanner, trust_slotless)
 
 
 def refresh_surface(
-    pine, scanner: TableScanner, surface: Surface, capture=None
+    pine,
+    scanner: TableScanner,
+    surface: Surface,
+    capture=None,
+    trust_slotless: bool | None = None,
 ) -> Surface:
     """Cheaply revalidate, while still noticing world/local transitions.
 
@@ -337,7 +406,7 @@ def refresh_surface(
             return discover_local_area(pine, verify_hud=False)
         except MapNotReady:
             pass
-    return discover_surface(pine, scanner, capture)
+    return discover_surface(pine, scanner, capture, trust_slotless)
 
 
 def validate_game(pine) -> None:

@@ -47,6 +47,11 @@ SWEEP_END = 0x01800000
 # has no table (menus, battles, loading) cannot spin the PINE service.
 SWEEP_MIN_INTERVAL = 8.0
 
+# How long the second character's position is believed after the globals last
+# showed it.  One read in fifty showed the player instead; five seconds covers
+# that without keeping a character who has left.
+OTHER_ACTOR_MEMORY = 5.0
+
 
 @dataclass(frozen=True)
 class ScanWindow:
@@ -66,6 +71,13 @@ class TableScanner:
     _last_sweep: float = 0.0
     _sweep_cursor: int = SWEEP_START
     tier_used: str = ""
+    # Tables judged stale this visit: no player slot to prove themselves with,
+    # and a settled minimap drawing none of the free destinations they list.
+    rejected: set = field(default_factory=set)
+    # The second character's last position, kept briefly because the globals
+    # that report it flick to the player's own position for the odd read.
+    _other: tuple | None = None
+    _other_seen: float = 0.0
 
     def targeted_windows(self) -> list[ScanWindow]:
         """Cheap reads that cover the steady state."""
@@ -120,6 +132,32 @@ class TableScanner:
 
     def invalidate(self) -> None:
         self.last_address = None
+
+    def reject(self, address: int) -> None:
+        self.rejected.add(address)
+        if self.last_address == address:
+            self.last_address = None
+
+    def note_other(self, position, now: float | None = None) -> None:
+        self._other = position
+        self._other_seen = time.monotonic() if now is None else now
+
+    def other(self, now: float | None = None):
+        moment = time.monotonic() if now is None else now
+        if self._other is None or moment - self._other_seen > OTHER_ACTOR_MEMORY:
+            return None
+        return self._other
+
+    def reset_visit(self) -> None:
+        """Forget everything tied to one stay on one surface.
+
+        Called when the world map has gone -- a cutscene, a battle, a load.
+        The next map may leave this one's table resident, and a rejection or an
+        acceptance that outlives its map is exactly the mistake this prevents.
+        """
+        self.invalidate()
+        self.rejected.clear()
+        self._other = None
 
 
 def tables_in_window(block: bytes, window: ScanWindow) -> list[tuple[int, tuple[Location, ...]]]:

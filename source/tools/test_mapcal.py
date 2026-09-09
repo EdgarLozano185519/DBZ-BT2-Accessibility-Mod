@@ -518,11 +518,47 @@ def test_a_refused_write_heads_home_rather_than_pressing_on():
 
 
 @check
-def test_a_silent_map_is_refused_before_anything_moves():
-    """No coordinate table means no teleport, and the run says so up front."""
+def test_a_map_with_no_table_still_calibrates():
+    """A map that publishes no coordinate table can still learn its scale.
+
+    The Namek map after the Zarbon fight draws one story marker and no table
+    at all.  Refusing there left the player with nothing: the story marker only
+    becomes a destination once the scale is known.  With no extent to plan
+    inside, the hops are sized from a fixed square around the player, which
+    gives the same 500-unit probe the table-backed maps have been getting.
+    """
     speaker = FakeSpeaker()
     run = mapcal.MapCalibration(speaker)
-    assert not run.start(FakeSurface(()), (0.0, 0.0, 0.0), 0.0)
+    assert run.start(FakeSurface(()), (0.0, -169.0, 0.0), 0.0)
+    assert run.active
+    assert run.probe == 500.0, run.probe
+    assert speaker.said("Move 1 of")
+
+
+@check
+def test_a_single_other_character_is_hopped_around_not_onto():
+    """One point has no extent, so the square is still the default one --
+    but the hops keep clear of the character standing in it."""
+    other = Location(0, 0, 300.0, -169.0, 300.0, 150.0, "the other character")
+    plan, problem = mapcal.plan_run(HOME, (other,))
+    assert plan is not None, problem
+    quadrant, probe, reach = plan
+    assert probe == 500.0, probe
+    for offset in mapcal.waypoints(quadrant, probe, reach):
+        if offset == (0.0, 0.0):
+            continue
+        landing = (HOME[0] + offset[0], HOME[1] + offset[1])
+        assert mapcal.clear_of_destinations(landing, (other,)), landing
+
+
+@check
+def test_a_vision_only_surface_is_still_refused():
+    """Without a readable position there is nothing to hop from."""
+    speaker = FakeSpeaker()
+    run = mapcal.MapCalibration(speaker)
+    surface = FakeSurface(())
+    surface.is_vision_only = True
+    assert not run.start(surface, (0.0, 0.0, 0.0), 0.0)
     assert speaker.said("needs the world map")
     assert not run.active
 

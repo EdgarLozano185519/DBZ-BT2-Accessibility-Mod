@@ -430,6 +430,21 @@ class Guide:
             f"{label}, {turn_phrase(angle)}, {distance:.0f} {UNIT_NAME}."
         )
 
+    def slotless_trust(self):
+        """Whether the minimap vouches for a table that has no player slot.
+
+        True once the census has settled with at least one free destination
+        showing, False when it has settled with none, None while unsettled.
+        The six-point Blue islands table has no slot, so memory alone could
+        never tell it was stale; on the Namek map that followed it, with one
+        red marker and no yellow ones, it was accepted as live.  Discovery
+        consults this instead.
+        """
+        inventory = self.state.inventory
+        if not inventory.settled:
+            return None
+        return bool(inventory.census.yellow)
+
     def navigation_scene_ready(self, analysis) -> bool:
         """Suspend immediately outside Adventure; reacquire after three frames.
 
@@ -457,6 +472,7 @@ class Guide:
                     self._feedback_suspended = True
                 if self._scene_missing_count == SURFACE_MISSING_CONFIRMATIONS:
                     self.state.reset_surface()
+                    self.scanner.reset_visit()
                     self._map_labeler.reset()
         ready = self._scene_ready_count >= SURFACE_READY_CONFIRMATIONS
         if ready:
@@ -918,25 +934,36 @@ f"Back from {label}. S story, F free, U nothing?"
             )
             return
 
-        if not surface.locations:
-            self.speaker.say(
-                "No destinations found on this map yet. Keep the world map in "
-                "view for a moment while they are located."
-            )
-            return
-
         # The story marker sits at the end of the cycle, when the map's scale
         # is known well enough to say where it is. It has no table entry -- it
         # is a picture on the minimap -- which is why cycling never used to
         # reach it, and why "press N until you hear Story" was wrong advice.
         # Calibration is what makes it a place, so this is where it appears.
         story = self.story_choice(surface, player)
+        if not surface.locations and story is None:
+            if surface.has_table:
+                self.speaker.say(
+                    "No destinations found on this map yet. Keep the world map "
+                    "in view for a moment while they are located."
+                )
+            else:
+                # Nothing is hidden here: the map publishes no table. What it
+                # will offer is the story marker, once C has learned the scale.
+                self.speaker.say(
+                    "This map has no destination table. Press C to calibrate "
+                    "it, and the story marker becomes a destination."
+                )
+            return
+
         points = len(surface.locations)
         total = points + (1 if story is not None else 0)
         if self.state.story_selected and story is not None:
             position = points
         else:
-            position = self.selected_location(surface, player).index
+            selected = self.selected_location(surface, player)
+            # With no table points the only entry is the story marker, and a
+            # first press must land on it from either direction.
+            position = selected.index if selected is not None else points - 1
         if action == "next":
             position = (position + 1) % total
         elif action == "previous":
@@ -994,7 +1021,10 @@ f"Back from {label}. S story, F free, U nothing?"
 
         def again():
             surface = self.name_surface(
-                discover_surface(self.pine, self.scanner)
+                discover_surface(
+                    self.pine, self.scanner,
+                    trust_slotless=self.slotless_trust(),
+                )
             )
             return self.augment_local(surface, player)
 
@@ -1609,13 +1639,15 @@ f"{surface.describe()}."
                         continue
                     menus.suspend()
                     self.note_capture_size(captured)
+                    trust = self.slotless_trust()
                     if state.surface is None:
                         observed = discover_surface(
-                            self.pine, self.scanner, lambda: captured
+                            self.pine, self.scanner, lambda: captured, trust
                         )
                     else:
                         observed = refresh_surface(
-                            self.pine, self.scanner, state.surface, lambda: captured
+                            self.pine, self.scanner, state.surface,
+                            lambda: captured, trust,
                         )
                     player = self.pine.read_vector3_many((observed.player_address,))[0]
                     observed = self.augment_local(observed, player)
@@ -1682,6 +1714,7 @@ f"{surface.describe()}."
                                     once=True,
                                 )
                             state.reset_surface()
+                            self.scanner.reset_visit()
                         time.sleep(0.35)
                         continue
 

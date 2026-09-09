@@ -11,6 +11,12 @@ VISION_WORLD = "vision_world"
 LOCAL_INTERACTION = "local_interaction"
 LOCAL_EXIT = "local_exit"
 
+# The identity of every world map that publishes no coordinate table.  One
+# profile serves them all, which means a scale learned on one is offered on
+# the next; the scale has agreed to within six percent across every map
+# measured, and C re-learns it in six hops if it does not.
+NO_TABLE_FINGERPRINT = "no-table"
+
 
 @dataclass(frozen=True)
 class Surface:
@@ -45,6 +51,10 @@ class Surface:
         return self.kind == LOCAL_EXIT
 
     @property
+    def has_table(self) -> bool:
+        return self.kind == WORLD and self.table_address != 0
+
+    @property
     def display_name(self) -> str:
         if self.name:
             return self.name
@@ -66,6 +76,12 @@ class Surface:
             return f"{self.display_name} local area"
         if self.is_vision_only:
             return f"{self.display_name} world map"
+        if not self.has_table:
+            extra = ""
+            if self.locations:
+                extra = f", {len(self.locations)} other character"
+                extra += "s" if len(self.locations) != 1 else ""
+            return f"{self.display_name} world map with no destination table{extra}"
         return (
             f"{self.display_name} world map with {len(self.locations)} "
             f"{'point' if len(self.locations) == 1 else 'points'}"
@@ -87,6 +103,29 @@ def world_surface(
         fingerprint=fingerprint_locations(locations),
         mirrors=mirrors,
         liveness_confirmed=liveness_confirmed,
+    )
+
+
+def tableless_world_surface(
+    player_address: int,
+    locations: tuple[Location, ...] = (),
+    mirrors: tuple[int, ...] = (),
+) -> Surface:
+    """A world map whose position is readable but which publishes no table.
+
+    First met on the Namek map after Vegeta defeats Zarbon: one red marker, no
+    yellow ones, and nothing in RAM shaped like a coordinate record.  Guidance,
+    G and calibration all work from the player's position and the minimap; the
+    only destinations are the ones memory can still offer -- another character
+    standing on the map -- and, once calibrated, the story marker.
+    """
+    return Surface(
+        kind=WORLD,
+        table_address=0,
+        player_address=player_address,
+        locations=locations,
+        fingerprint=NO_TABLE_FINGERPRINT,
+        mirrors=mirrors,
     )
 
 

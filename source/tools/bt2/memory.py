@@ -376,6 +376,12 @@ class MirrorSet:
     simulation: tuple[int, ...]
     render: tuple[int, ...]
     position: tuple[float, float, float]
+    # Where the simulation globals pointed when they disagreed with the render
+    # block.  On the Namek map reached 2026-09-08 that was a second character
+    # standing on the story marker, and the globals turned out to be a per-frame
+    # scratch that only occasionally holds the player.  None when the two sets
+    # agree, which they did on every map before that one.
+    other: tuple[float, float, float] | None = None
 
     @property
     def all_addresses(self) -> tuple[int, ...]:
@@ -383,7 +389,7 @@ class MirrorSet:
 
     @property
     def authoritative(self) -> int:
-        return self.simulation[0]
+        return self.simulation[0] if self.simulation else self.render[0]
 
 
 def _planar_matches(
@@ -443,15 +449,9 @@ def discover_world_mirrors(
         if address in readings and plausible(readings[address])
     }
 
-    simulation_group = _largest_agreeing_group(simulation_readings)
-    if simulation_group is None or len(simulation_group[0]) < MIN_SIMULATION_QUORUM:
-        raise MapNotReady(
-            "The overworld simulation transform is not stable yet "
-            f"({0 if simulation_group is None else len(simulation_group[0])} of "
-            f"{MIN_SIMULATION_QUORUM} required mirrors agree)"
-        )
-    simulation_addresses, simulation_position = simulation_group
-
+    # The render block is the one set that has followed the player on every
+    # map, including the one where the simulation globals did not, so it is
+    # what a world surface needs.  The globals are welcome when they agree.
     render_group = _largest_agreeing_group(render_readings)
     if render_group is None or len(render_group[0]) < MIN_RENDER_QUORUM:
         raise MapNotReady(
@@ -461,15 +461,31 @@ def discover_world_mirrors(
         )
     render_addresses, render_position = render_group
 
-    render_lag = math.hypot(
-        render_position[0] - simulation_position[0],
-        render_position[2] - simulation_position[2],
-    )
-    if render_lag > MAX_RENDER_LAG_DISTANCE:
-        raise MapNotReady(
-            f"The overworld render transform is still loading "
-            f"({render_lag:.1f} units apart)"
+    simulation_addresses: tuple[int, ...] = ()
+    position = render_position
+    other = None
+    simulation_group = _largest_agreeing_group(simulation_readings)
+    if (
+        simulation_group is not None
+        and len(simulation_group[0]) >= MIN_SIMULATION_QUORUM
+    ):
+        simulation_addresses, simulation_position = simulation_group
+        render_lag = math.hypot(
+            render_position[0] - simulation_position[0],
+            render_position[2] - simulation_position[2],
         )
+        if render_lag > MAX_RENDER_LAG_DISTANCE:
+            # Not a half-loaded frame: a second character.  Measured live on
+            # 2026-09-08, the globals sat 1390 units from the player and held
+            # still while the player flew, then briefly showed the player's own
+            # position for a single read.  They are a scratch shared between
+            # actors, so they are neither written to nor read from here; the
+            # position they hold is reported, because on that map it was the
+            # story marker's occupant.
+            other = simulation_position
+            simulation_addresses = ()
+        else:
+            position = simulation_position
 
     ordered_simulation = tuple(
         address for address in PLAYER_SIMULATION_CANDIDATES
@@ -478,7 +494,37 @@ def discover_world_mirrors(
     ordered_render = tuple(
         address for address in PLAYER_RENDER_CANDIDATES if address in render_addresses
     )
-    return MirrorSet(ordered_simulation, ordered_render, simulation_position)
+    return MirrorSet(ordered_simulation, ordered_render, position, other)
+
+
+# A second character on the world map, offered as somewhere to teleport to.
+# The radius is a landing depth, not a trigger: nothing is known about what,
+# if anything, standing next to them triggers.  It is a little under the
+# smallest destination radius seen, so the altitude rule leaves the player at
+# cruise height.
+OTHER_ACTOR_RADIUS = 150.0
+OTHER_ACTOR_NAME = "the other character"
+
+
+def other_actor_location(
+    position: tuple[float, float, float],
+    address: int = PLAYER_SIMULATION_CANDIDATES[0],
+) -> Location:
+    return Location(
+        0, address, position[0], position[1], position[2],
+        OTHER_ACTOR_RADIUS, OTHER_ACTOR_NAME,
+    )
+
+
+def table_has_slot(memory: MemoryView, table_address: int) -> bool:
+    """Whether this table keeps a player slot beside it at all.
+
+    Earth's does; the six-point Blue islands table does not.  A table without
+    one cannot be proved stale by memory alone, which is how that table was
+    offered on the map after its own -- so its acceptance is decided elsewhere,
+    by whether the minimap is drawing the destinations it describes.
+    """
+    return player_transform_is_valid(memory, table_player_slot(table_address))
 
 
 def find_local_player_mirrors(block: bytes, base: int) -> tuple[int, ...]:

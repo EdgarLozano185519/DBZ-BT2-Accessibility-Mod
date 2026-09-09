@@ -60,6 +60,23 @@ Menus speak through NVDA, driven by the game's own memory:
   hops, each announced -- pause, "Moved", unpause -- ending exactly where it
   started. `bt2/mapcal.py`; `test_mapcal.py` covers it in 30 offline checks
   that need no emulator.
+- **A map with no coordinate table is still a world map**, as of
+  2026.09.08-r2. The Namek map after Vegeta beats Zarbon publishes no table --
+  one red marker, no yellow ones, nothing in RAM shaped like a record -- and
+  the previous map's six points stay resident. The guide now says "world map
+  with no destination table", refuses the stale table because the minimap shows
+  no free destinations for it, offers **the other character on the map** as an
+  N and B destination (they were standing on the story marker), and lets **C**
+  calibrate with no table so the story marker becomes a destination too.
+  **Confirmed in play 2026-09-08**: N gave "toward the other character.
+  Destination 1 of 1", T moved the player there, and Cross started the story
+  event. See item 7.
+- **The player's position comes from the render block when the globals
+  disagree with it.** Same release. Two characters on a map put the
+  simulation globals 1390 units from the player; a forward nudge, watched
+  live, moved the render block and the minimap arrow together while the
+  globals stayed on the other character. Teleport writes only the render block
+  in that case. `test_discovery.py`, 12 checks.
 - **The story marker is the last entry in the N and B cycle**, on a calibrated
   map. Added 2026-09-07 after the player asked, in play, whether it was --
   which it should have been from the start. Before this, one press of N locked
@@ -261,6 +278,12 @@ loop was acceptable.
 **The guesswork is what C removes.** It has been run twice in play on the Blue
 landmass map, and T reached the story marker from it. Whether it holds on a map
 other than that one is the open question -- see item 7 under Next steps.
+
+On a map that announces **"no destination table"** (first seen on Namek,
+2026-09-08), N offers whatever other character is standing on the map, and T
+goes there -- confirmed in play the same night, and it started the event. C
+works as above and adds the story marker to the cycle; that part has not been
+needed yet.
 
 ## The save file
 
@@ -651,6 +674,71 @@ removing next -- see the pause note under Also worth doing.
 play and by reading, not by a check that would catch a regression. There is no
 `test_guide.py` and building the fakes for one is a real piece of work; worth
 doing before that method is next changed.
+
+**Recorded 2026-09-08, evening: the second map is reached, and C cannot run
+on it.** After the Vegeta-versus-Zarbon event on the Frieza Saga, the player
+arrived on a Namek world map that shows one red story marker and no yellow
+ones. The log for that session says "No destinations found on this map yet" on
+every N, B and C press, and T is refused. Investigated offline the same evening
+with PCSX2 still on the map, read-only:
+
+- **The map has no coordinate table.** A dump of all 32 MiB holds exactly one
+  sentinel table, map 6's six points at `0x00D7C7C0`, still resident. Nothing
+  else in RAM matches the record shape, type 0 or type 2. So `surface.locations`
+  is empty, `mapcal.start` refuses, and N and B have nothing to cycle. The
+  visual census works: one story marker, later two.
+- **The two position mirror sets belong to two different characters.** The
+  simulation globals at `0x0038B130` hold one hovering character at about
+  (-244, -699); the render block at `0x00E5C120` holds another at about
+  (-1076, 418), 1393 units away. `discover_world_mirrors` therefore refuses
+  every tick ("render transform is still loading"), which alone forces the
+  vision-only surface and kills T even if a table existed.
+- **Which is Vegeta?** The minimap decides, on strong but unconfirmed evidence:
+  arrow to marker on screen is (+37, +42) px, which map 6's Jacobian converts to
+  (+828, -1064) world units. Adding that to the *render* position predicts
+  (-248, -646), and the *simulation* position is (-244, -699), 54 units off.
+  The other assignment points the wrong way entirely. So on this map the render
+  block is the player and the global the guide has always called authoritative
+  is following the other character -- who is standing on the story marker.
+  Confirming this needs one thing from the player: nudge forward for a second
+  while the mirrors are watched.
+
+**Confirmed the same evening by a nudge test**, spoken through NVDA: the
+player pushed forward for a second; the render block moved 524 units and the
+minimap arrow moved by the matching amount through map 6's scale, while the
+globals jumped back to the other character on the first read and never moved
+again. The globals are a scratch shared between actors, not the player.
+
+**What changed for 2026.09.08-r2**, offline-tested and then **confirmed in
+play the same night** -- the log holds "New map world map with no destination
+table, 1 other character", "Fly south for 1308 units toward the other
+character. Destination 1 of 1", "T teleport: moved to the other character",
+and the next event's opening lines straight after:
+
+- `discover_world_mirrors` no longer refuses when the two sets disagree. The
+  render block is the position; the globals' reading is kept as "the other
+  character". When the sets agree nothing changes.
+- A table with no player slot is trusted only while the settled minimap census
+  shows at least one free (yellow) destination. Map 6 always did; Namek never
+  does. Once accepted it stays accepted through the census resetting on a
+  surface change; once rejected it stays rejected for the visit. Every
+  world-map disappearance resets both.
+- With no table accepted, discovery returns a **table-less world surface**
+  rather than failing. Its destinations are whatever characters memory shows.
+- `mapcal` plans its hops inside a fixed 2000-unit square around the player
+  when there is no table extent, giving the same 500-unit probe as before.
+- N and B on such a map say what to do: "This map has no destination table.
+  Press C to calibrate it, and the story marker becomes a destination."
+
+**What is now proven:** writing the render block alone moves the character.
+Every earlier teleport had written both sets, so this was the open risk, and
+the first T on the table-less map settled it. **What is not yet exercised:** C
+on a table-less map, and the story marker entering the N and B cycle there --
+the other character stood on the marker, so neither was needed. Both are
+offline-tested only.
+
+See `docs/memory-map.md`, "A map with no coordinate table, and a second
+character".
 
 ### 8. Finish the story reader
 

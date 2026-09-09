@@ -1256,6 +1256,76 @@ on it. The in-place case -- a story event rearranging markers while the map
 stays the same, which announces "Destinations changed" -- has still not been
 observed, and should not be reported as working until it is.
 
+## A map with no coordinate table, and a second character
+
+Observed 2026-09-08 on the Namek world map reached after Vegeta defeats Zarbon
+(Frieza Saga), with PCSX2 sitting on the map and the guide closed. Everything
+below is from one read-only 32 MiB dump plus two screen captures.
+
+- **No sentinel table exists for this map.** The only records in RAM carrying
+  the 99999 triple are map 6's: six type-2 records at `0x00D7C7C0` and two
+  type-0 records at `0x00D7B540`, all stale. The minimap shows one red marker
+  and no yellow ones, so a map whose only destinations are story markers may
+  publish no table. `find_tables` is not at fault; there is nothing to find.
+- **Two hovering characters, two mirror sets.** `0x0038B130` and its eight
+  neighbours (the simulation candidates) hold an orthonormal transform at
+  (-243.6, y, -699.4) with y bobbing between -168 and -171; 72 copies of that
+  translation exist, mostly bone pools at `0x00E23A40`-`0x00E26D40`. The render
+  candidates at `0x00E5C120` hold (-1076.0, y, 418.3), also bobbing, with 138
+  copies in `0x00443000`-`0x00549000` and `0x00E26DE0`-`0x00E2A1C0`. The
+  rotation block immediately before `0x00E5C120` is zero on this map; the real
+  rotation for that character sits at `0x00E5C180`.
+- **The minimap says the render set is the player.** Arrow at (245, 507),
+  marker at (282, 549) in a 1066x705 capture. Through map 6's Jacobian that is
+  (+828, -1064) world units, and render + that = (-248, -646) against the
+  simulation reading of (-244, -699). The reverse assignment predicts the marker
+  up-left of the arrow, where nothing is. Treat as strong, not proven: one
+  forward nudge by the player, watching which set moves, would settle it.
+- **Consequences in the shipped build.** `discover_world_mirrors` raises on
+  the 1393-unit disagreement, so `discover_world_map` never reaches its table
+  logic, the surface falls back to vision-only, and `teleport()` -- which calls
+  the same function -- refuses to write. `mapcal.start` refuses separately on
+  the empty location list.
+
+**Settled by a nudge test the same evening.** With the player pushing forward
+for a second, the render block at `0x00E5C120` moved 524 units in a straight
+line and the minimap arrow moved (527, 187) world units through map 6's
+Jacobian -- the same displacement to within 8%. The globals at `0x0038B130`
+jumped 1390 units back to the other character on the first read after the
+baseline and never moved again. So: the render block is the player on every
+map; the globals are a per-frame scratch that holds whichever actor was
+processed last, which is the player only when the player is the only actor.
+
+**Two leads not yet used.** Both characters have a triple of position copies
+at `0x014693C0`/`+0x90`/`+0xE0` (player) and `0x01469560`/`+0x90`/`+0xE0`
+(other), a `0x1A0` stride apart -- the shape of an actor array, and possibly
+the authoritative simulation state. And the real rotation for the player on
+this map sits at `0x00E5C180`, so `0x00E5C1B0` is the translation of a proper
+4x4 while the matrix before `0x00E5C120` is zero; `player_frame` therefore
+fails and G falls back to a compass bearing here.
+
+**What ships in 2026.09.08-r2** (`memory.discover_world_mirrors`,
+`discovery.discover_world_map`, `scan.TableScanner`, `surface`, `mapcal`):
+
+- Disagreeing sets no longer refuse. Position and teleport writes use the
+  render block; the globals' reading becomes a destination called "the other
+  character" (`OTHER_ACTOR_RADIUS` 150, a landing depth not a trigger), held
+  for five seconds past the last read that showed it because one read in fifty
+  shows the player instead.
+- A slot-less table needs the minimap to vouch for it: accepted while the
+  settled census shows a free destination, rejected for the visit when it
+  shows none, deferred while unsettled unless already accepted this visit.
+  `scanner.reset_visit()` clears all of that whenever the world map is gone.
+- No accepted table gives a `WORLD` surface with `table_address` 0 and the
+  fingerprint `no-table`, shared by every such map. C plans inside a 2000-unit
+  square around the player instead of the table's extent.
+
+**Confirmed in play, 2026-09-08 late.** Writing the render block alone moved
+the character: "Fly south for 1308 units toward the other character", T,
+"moved to the other character", Cross, and the Krillin-and-Zarbon event began.
+Every earlier teleport had written both sets, so this was the one open risk.
+Still unexercised on a table-less map: C, and the story marker in the cycle.
+
 ## An input held is better than an input dropped
 
 The destination keys were being read correctly -- a spy on the poll showed
