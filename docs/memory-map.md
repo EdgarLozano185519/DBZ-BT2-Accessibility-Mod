@@ -1130,9 +1130,162 @@ confirmed, player 2 at rest), `csel20`-`csel26` (player 2 moving), with the
 `*_cues.txt` beside each scan. The scan tools take `--prefix` as of the same
 day, because their default names were the Select Scenario archive.
 
+## Item Shop: one marker, three screens, and lists read as text
+
+**Mapped 2026-09-08**, in three sittings: one capture of the shop's first
+screen (`ishop0`), then two cued walks with the player at the controls --
+`shop0`-`shop23` through the Buy/Sell menu and into both lists, and
+`scroll0`-`scroll30` scrolling the Buy list end to end and visiting every
+category tab. 56 captures, each with its screenshot, and every reading below
+was checked against the pictures.
+
+**What the shop is.** Baba's shop off the main menu. First a two-entry
+vertical menu, **Buy Z Item** above **Sell Z Item**, artwork both, with
+Baba's spoken line beneath and the player's Zeni top right; Cross decides,
+Triangle returns. Behind each option a list of Z-items in four category tabs
+-- Ability Type, Support Type, Fusion type, Secret Type, artwork all, chosen
+with Left and Right -- four rows visible at a time with a scrollbar, the
+price as sprite digits, and the prompt "Which Z-item do you want?" (or "...to
+sell?") as text. Cross on an item opens a purchase prompt, which no walk
+entered.
+
+- **Marker** -- `mc_item_category_icon_on` at `0x00984118`, in the block the
+  shop allocates for itself: 64 sprite names from `0x00983D32` to
+  `0x00989BF9` (category icon colours, an item-name placeholder, money
+  digits, four potara slots, a yes/no box, Baba's face). The same name sits
+  in the static string tables on every screen (`0x00372F18`, `0x004268F0`)
+  and in the low copy every screen keeps of its sprite set (`0x008CDD0A`);
+  this copy is in no other capture on disk. **It stays up through the menu
+  and both lists** -- all 55 walk captures -- so the whole shop is one
+  screen to detection. No other screen's fresh marker matches here. Select
+  Scenario's stale one does; see below.
+- **`in_adventure`**, because the HUD heuristic calls the shop gameplay on
+  its screenshots. The base screen carries the flag on the marker alone, so
+  a shop dialog this build has not mapped keeps world-map guidance off.
+- **State byte** `0x008CD36C`: `0` on the Buy/Sell menu, `8` in the Buy
+  list, `0x18` in the Sell list, on every one of the 56 captures, through
+  menu, Buy, menu, Sell, menu and back. The word's upper bytes vary with the
+  route in (`0x0000` fresh, `0x0200` after the Buy list, `0x0600` after the
+  Sell list, `0x0308` and `0x0718` inside them) and are ignored. What the
+  byte reads `0x28` after Cross on an item the player can afford: the
+  **how-many picker**, below. Cross on one they cannot afford leaves it at
+  `8`. The first-visit welcome, the sale itself and the Sell side's prompts
+  are still unmeasured: an unmapped value names the shop, reads nothing,
+  and writes the value to the log.
+- **The how-many picker** (`shop_stamp`, `qty0`-`qty18`, 2026-09-08). The
+  list stays drawn, the bottom bar reads Decide and Return, the count box
+  shows the quantity and the Zeni display what would be left after buying.
+  The quantity is the word at `0x008CD364`, beside the category index: 1 on
+  entry, **Up +1, Down -1 with a floor of 1, Right to the most affordable
+  (8 stamps at 20000 from 173500), Left back to 1**, fourteen cued presses
+  each read off its screenshot, and 0 whenever the picker is not up. Spoken
+  as "times N". **Baba's box does not change here** -- it kept "Hey, you
+  don't have enough money!!" from an earlier refusal on every capture, on
+  screen and in memory -- so it is not read on this screen. An earlier
+  build (r4, never released) spoke it from a log-only mapping and was
+  wrong: the log had shown the value beside that line, and the line was
+  stale. **The Zeni shown is not spoken**: no word or halfword in RAM holds
+  the highlighted item's price, the total, or the displayed balance, at
+  scales 1 to 1000, across nine captures with known prices. The player's
+  real balance is at `0x0063383C` (173500 throughout) and does not move
+  in the picker.
+- **The refusal happens in the list.** Cross on Dragon Radar (200000,
+  unaffordable) left the state at `8` and the row where it was; only
+  Baba's line changed. So the list variants read the display pointer as a
+  second slot, spoken on change and not on arrival, and the refusal is
+  heard. Triangle from there went to the Buy/Sell menu, "Anything else for
+  you?".
+- **Per-tab item counts** at `0x008CD350 + 4 * category`: 9, 12, 5, 1 on
+  this save, matching the items the log names in each tab. Not read yet;
+  the natural use is "3 of 9" after an item's name.
+- **Buy/Sell cursor** -- `0x008CC32C`, plain, 0 or 1, in the shop's low
+  block beside the state; doubled at `0x00532943` in static memory, the same
+  arrangement as Options (`0x00532173`) and Game Level (`0x00432D71`). Both
+  agree on all ten captures of the menu, including after returning from
+  each list -- the transition it was not derived from. **Off the menu the
+  static copy is reused** and the two disagree (1 against 0 on the Sell
+  list), so the cursor belongs to the menu variant, never the base screen.
+  Two entries, so the schedule mixed presses that do nothing (Right) with
+  Up and Down, and both copies were required; the fit gave this pair and
+  nothing else in the shop's blocks.
+- **The lists draw their four visible names through text-draw slots** --
+  the display pointer's structure at `0x008C6244` and the three after it,
+  `0x4C` apart: `0x008C6290`, `0x008C62DC`, `0x008C6328`, `0x008C6374` --
+  in list order, top to bottom, with position halfwords 0x8C, 0xB0, 0xD4,
+  0xF8 and no field that marks the highlight. (`0x008C62DC` is the slot the
+  character select reads as player 2; it is the third draw slot, not a
+  special one.) The slots point into the game's item-name table, `0x40`
+  stride, `0x00B13xxx`-`0x00B19xxx` in these captures, the same table the
+  scenario names live in; they are read through the pointers, never by
+  address.
+- **Row cursor** -- `0x008CC330 + 4 * category`, counting the whole list,
+  and **top row** `0x008CC340 + 4 * category`, counting the scroll; the
+  **category** is at `0x008CD360`, 0 to 3, Left and Right. The game
+  remembers the row in each tab, which is why a single row address fitted
+  nothing. `row - top` is the visible slot, and it picked the highlighted
+  name on all 41 list captures: rows 0 to 8 of the first tab going down
+  (the window scrolls once the cursor passes row 3), back up (the window
+  scrolls once it passes the top), and down to the last item, where the
+  cursor stops rather than wraps; the four rows of the second tab; and the
+  first row of the third and fourth. The top-row array is measured for the
+  first tab only; no other tab was scrolled. The fourth tab holds one item,
+  and the three slots beneath it keep the previous tab's names -- stale, and
+  never read, because the row cursor cannot reach them.
+- **What is not read.** Prices (sprite digits), the item count owned
+  (sprite digits), the category name (artwork), and the item explanation
+  behind Square, which no walk opened.
+- **Prose.** The shop's dialogue is a `TXT-US` file loaded whole at
+  `0x00B04D00` -- 14 boxes, from "Welcome!" to "Thank you very much!" --
+  with a word at `0x008CC1E8` holding its base. The display pointer aims at
+  whichever box is up: the greeting on the menu, the buy or sell prompt in
+  the lists, "Anything else for you?" on returning. F12 reads it.
+- **What the log showed before this entry.** The 2026-09-08 21:55 session
+  has "Item Shop" (the main-menu option) followed by "Select Scenario" --
+  the stale Dragon Adventure marker naming the shop, exactly as it named
+  Options the day before. With a fresh marker here it is outranked;
+  `dryrun` against the live game then said "Item Shop", and after the lists
+  were wired, "Item Shop", "Buy Z Item". **Heard in play the same night**:
+  the 23:03 log holds the menu, every item in all four tabs, and the one
+  state the build did not know, by value.
+
+**In the code**, `Screen` gained three things for this. `QuantityView`
+speaks a picked number. `variants` maps a
+state byte's values to sub-screens that share the base screen's marker --
+detection names the base, then resolves the variant, and an unknown value
+leaves the base up, named and unreadable. `ListView` reads a scrolling list
+through draw slots by `row - top`. `test_menus.py` holds 26 of the captures
+with what their screenshots show, the walk menu-list-menu, the unmapped
+state, and the cursor's copies disagreeing on the Sell list.
+
+**`ishop0` is also the post-Adventure capture item 1 of the status notes
+asked for**, taken by the route main menu, Dragon Adventure, main menu, Item
+Shop. `mc_da_2_text_off_l` at `0x00D53440` is present on it; `mc_da_5_lv_csr`
+at `0x00D547C0` is not. `test_menus.py` records that sighting in `STALE`, so
+a stale match anywhere it has not been measured still fails.
+
+Measured across the per-screen table at `0x00D52000`-`0x00D56000`: every
+`mc_da_*` entry on `ishop0` is exactly the set on `events0`, the Select
+Scenario capture -- `mc_da_2_text_off_l`, `mc_da_2_text_off_t`,
+`mc_da_2_text_on` -- and none of Game Level's four. The player had gone back
+from Game Level to Select Scenario before leaving, so the table holds
+**whichever Dragon Adventure screen was drawn last**, not everything that was
+ever loaded. A marker in that table is evidence of the last Adventure screen,
+not the current one.
+
+Captures: `ishop0`, `shop0`-`shop23`, `scroll0`-`scroll30`, each with its
+screenshot and the `*_cues.txt` beside each walk. **The screenshots needed
+the PCSX2 window restored**: the player keeps it minimized, `PrintWindow`
+cannot read a minimized window, and the window finder rejects one for its
+size. For the lone capture it was restored without activation, photographed,
+and minimized again; during the walks the player had the game in front.
+`positionscan --keep-going` was added for the walks, since losing the marker
+was never the point of a press here and the old rule stopped at it.
+
 ## Screens seen but not mapped
 
 - **Dragon Library** -- detected only.
+- **Item Shop** -- mapped, see its own section; its purchase prompt and
+  item explanation are the parts not yet seen.
 - **Ultimate Battle Z** -- not detected at all. The announcer correctly says
   "Unknown screen" there, which is the intended behaviour: naming a screen it
   cannot read would be worse than admitting it.
@@ -1693,6 +1846,10 @@ interpretable.
 ## Known gaps
 
 - Dragon Library and every other submenu need cursor addresses.
+- **The Item Shop's sale, its prices, and the Sell side's prompts** are
+  unseen; the player has asked for a key that says their Zeni, whose word
+  is known but has never been watched changing. See the Item Shop section
+  and the status notes.
 - The Game Level cursor has not been checked across leaving the screen and
   coming back.
 - The current-event index is still unknown, so the **event name cannot be read
@@ -1762,6 +1919,9 @@ interpretable.
 
 ## Fixed
 
+- **"Select Scenario" announced over the Item Shop**, by the Dragon
+  Adventure marker that outlives its screen. The shop now has a fresh marker
+  of its own, which outranks the stale one; see the Item Shop section.
 - **"Unknown screen" on every transition.** No marker matches while one screen
   is unloading and the next has not loaded, so the announcer spoke on every
   navigation. `bt2/menus.py` now waits 1.5 seconds before saying it, which the

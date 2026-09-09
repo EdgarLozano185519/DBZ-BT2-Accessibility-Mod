@@ -1,5 +1,5 @@
 {
-  "release": "2026.09.08-r2",
+  "release": "2026.09.08-r5",
   "platform": "Windows x64",
   "dependencies": {
     "Python": "3.12.10",

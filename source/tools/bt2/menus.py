@@ -156,6 +156,68 @@ class Signature:
         return True
 
 
+class ListView:
+    """A scrolling list whose visible rows the game draws through text slots.
+
+    The Item Shop's lists work this way, measured over 55 captures on
+    2026-09-08: four text-draw structures, 0x4C apart, hold the four visible
+    names in list order; a row cursor counts the whole list; and a separate
+    top-row byte says how far the window has scrolled.  The highlighted name
+    is the slot at `row - top`.  Both counters are kept once per category tab,
+    on a four-byte stride, because the game remembers the row in each tab.
+
+    Nothing here is a table of names.  The slots point into the game's own
+    item-name table, so the words are the game's and the reading is not tied
+    to English.
+    """
+
+    def __init__(self, category, row_base, top_base, stride, slots,
+                 categories):
+        self.category = category
+        self.row_base = row_base
+        self.top_base = top_base
+        self.stride = stride
+        self.slots = tuple(slots)
+        self.categories = categories
+
+    def highlighted_slot(self, pine) -> int | None:
+        """The draw structure showing the highlighted row, or None."""
+        category = pine.read8(self.category)
+        if category >= self.categories:
+            return None
+        row = pine.read8(self.row_base + self.stride * category)
+        top = pine.read8(self.top_base + self.stride * category)
+        visible = row - top
+        if not 0 <= visible < len(self.slots):
+            # A row outside the window is a read mid-scroll or a layout this
+            # build has not seen; naming a neighbour would be the confident
+            # error, so say nothing this frame.
+            return None
+        return self.slots[visible]
+
+
+class QuantityView:
+    """A how-many picker: one number the player raises and lowers.
+
+    The Item Shop's, measured 2026-09-08 over a cued run of fourteen presses:
+    Up adds one, Down takes one and stops at one, Right jumps to the most the
+    player can afford, Left jumps back to one.  The number is spoken as the
+    screen shows it -- "times 2" for the box that reads x002.  The Zeni the
+    screen shows beside it, what would be left after buying, is not spoken:
+    no word in RAM holds the price, the total or that balance, so it cannot
+    be computed honestly.
+    """
+
+    def __init__(self, quantity):
+        self.quantity = quantity
+
+    def label(self, pine) -> str | None:
+        quantity = pine.read8(self.quantity)
+        if quantity == 0:
+            return None      # The picker is not up, whatever the state says.
+        return f"times {quantity}"
+
+
 class Screen:
     """A menu: how to recognise it, where its cursor is, what its rows say."""
 
@@ -165,7 +227,8 @@ class Screen:
                  alternate=None, search_band=None,
                  marker_outlives_screen=False, count_address=None,
                  unknown_row_with_count=None, id_array=None, id_stride=4,
-                 labels_by_id=None, name_pointers=()):
+                 labels_by_id=None, name_pointers=(), list_view=None,
+                 quantity_view=None, state_address=None, variants=()):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -215,6 +278,25 @@ class Screen:
         # said the first time a different slot changes, so a player who has
         # moved from one panel to the other hears which one is speaking.
         self.name_pointers = tuple(name_pointers)
+        # A scrolling list read through the game's text-draw slots -- see
+        # ListView. The Item Shop's Buy and Sell lists are the two so far.
+        self.list_view = list_view
+        # A number the player picks; see QuantityView.
+        self.quantity_view = quantity_view
+        # A screen that is really several: the Item Shop keeps one marker up
+        # through its Buy/Sell menu and both item lists, and tells them apart
+        # by a state byte. `variants` maps that byte's value to the screen it
+        # means; each variant answers to the same marker plus its own value.
+        # A value with no variant leaves the base screen up, named but
+        # unreadable, so the player hears where they are and nothing invented
+        # -- and the guide's Adventure gate still sees the marker, so world-map
+        # guidance cannot resume over a shop dialog it does not know.
+        self.state_address = state_address
+        self.state_value = None
+        self.variants = tuple(variants)
+        for value, variant in self.variants:
+            variant.state_address = state_address
+            variant.state_value = value
         # The recorded marker, which sits beside the cursor.
         self.primary = Signature([(marker_address, marker)], near_cursor=True)
         # Evidence from a second allocation, which outlives the first. It names
@@ -233,15 +315,60 @@ class Screen:
 
     @property
     def readable(self) -> bool:
-        return self.cursor is not None or bool(self.name_pointers)
+        return self.cursor is not None or self.speaks_names
+
+    @property
+    def speaks_names(self) -> bool:
+        """Does this screen read the game's drawn text rather than a table?"""
+        return (bool(self.name_pointers) or self.list_view is not None
+                or self.quantity_view is not None)
+
+    @property
+    def name_prefixes(self) -> tuple[str | None, ...]:
+        prefixes = tuple(prefix for _, prefix in self.name_pointers)
+        if self.list_view is not None or self.quantity_view is not None:
+            return (None,) + prefixes
+        return prefixes
 
     def displayed_names(self, pine) -> tuple[str | None, ...]:
-        """The name each draw pointer aims at, or None where it is not text."""
+        """What each spoken slot says now, or None where it says nothing.
+
+        The first slot is the list's highlighted row or the picker's number
+        where the screen has one; the draw pointers follow.  On the shop's
+        lists the display pointer is the second slot, so Baba's line is
+        spoken when it *changes* while the list is up -- the not-enough-money
+        refusal happens there, in the list, with nothing else moving -- and
+        not on arrival, when the first slot alone is said.
+        """
         from . import story
-        return tuple(story.displayed(pine, address)[0]
+        names = []
+        if self.list_view is not None:
+            slot = self.list_view.highlighted_slot(pine)
+            names.append(None if slot is None else story.displayed(pine, slot)[0])
+        elif self.quantity_view is not None:
+            names.append(self.quantity_view.label(pine))
+        names.extend(story.displayed(pine, address)[0]
                      for address, _ in self.name_pointers)
+        return tuple(names)
+
+    def state(self, pine) -> int | None:
+        if self.state_address is None:
+            return None
+        return pine.read8(self.state_address)
+
+    def resolve(self, pine):
+        """The variant the state byte names, the screen itself, or None."""
+        if not self.variants:
+            return self
+        value = self.state(pine)
+        for wanted, variant in self.variants:
+            if value == wanted:
+                return variant
+        return None
 
     def present(self, pine, shift: int = 0) -> bool:
+        if self.state_value is not None and self.state(pine) != self.state_value:
+            return False
         if self.primary.present(pine, shift):
             return True
         return self.alternate is not None and self.alternate.present(pine)
@@ -442,6 +569,11 @@ def find_screen_shift(pine, screen) -> int | None:
     return shift if screen.primary.present(pine, shift) else None
 
 
+# The Item Shop's lists; see the Item Shop entry below.
+SHOP_LIST = ListView(
+    category=0x008CD360, row_base=0x008CC330, top_base=0x008CC340, stride=4,
+    slots=(0x008C6290, 0x008C62DC, 0x008C6328, 0x008C6374), categories=4)
+
 SCREENS = [
     # The main menu is recognised twice over, from two allocations with
     # different lifetimes. 0x00AA15EC sits 0x344 above the cursor, so finding
@@ -510,6 +642,88 @@ SCREENS = [
         mirror=0x00532173, mirror_stride=2,
     ),
     Screen("Dragon Library", 0x00AB1FAF, b"mc_musicprogram_0"),
+    # The Item Shop, Baba's shop off the main menu: a two-entry menu, Buy Z
+    # Item above Sell Z Item, and behind each a scrolling list of Z-items in
+    # four category tabs. One marker stays up through all of it -- the
+    # highlighted item-category icon sprite, in the block the shop allocates
+    # for itself at 0x00983D32-0x00989BF9 -- and a state byte at 0x008CD36C
+    # says which part is showing: 0 on the menu, 8 in the Buy list, 0x18 in
+    # the Sell list, on every one of the 56 captures taken 2026-09-08. Its
+    # upper bytes vary with the route in and are ignored.
+    #
+    # The marker is in no other capture on disk, and no other screen's fresh
+    # marker matches here -- only Select Scenario's stale one, which this
+    # outranks. Before this entry the guide announced "Select Scenario" over
+    # the shop, by that stale marker; the 2026-09-08 21:55 log has it.
+    #
+    # `in_adventure` because the HUD heuristic calls the shop gameplay
+    # (measured on its screenshots). The base screen carries the flag on the
+    # marker alone, so a shop dialog this build has not mapped -- the
+    # purchase confirmation, say -- keeps world-map guidance off.
+    #
+    # The Buy/Sell cursor is kept twice, as on Options and Game Level: plainly
+    # at 0x008CC32C in the shop's low block and doubled at 0x00532943 in static
+    # memory, agreeing on all ten captures of the menu, including after a
+    # return from each list -- the transition it was not derived from. Off
+    # the menu the static copy is reused and the two disagree, which is why
+    # the cursor belongs to the menu variant and not the base screen.
+    #
+    # The lists draw their four visible names through text-draw slots -- the
+    # display pointer's structure and the three after it, 0x4C apart -- in
+    # list order, with no highlight flag. The row cursor counts the whole
+    # list and a top-row byte counts the scroll; both are per category tab,
+    # four bytes apart, and the category index is at 0x008CD360. `row - top`
+    # picked the highlighted name on every one of 41 list captures read back
+    # against its screenshot: nine rows of one tab in both directions, the end
+    # of the list (it does not wrap), and three other tabs. The top-row array
+    # is measured for the first tab only; the others never scrolled.
+    #
+    # Nothing is transcribed for the lists: the item names are the game's
+    # own table, read through the slots. Prices are sprite digits and are
+    # not read. Baba's line beneath everything is prose, read on F12.
+    #
+    # Cross on an affordable item puts the state byte at 0x28: a how-many
+    # picker. The list stays drawn, the bottom bar reads Decide and Return,
+    # the count box shows the quantity and the Zeni display what would be
+    # left. The quantity is at 0x008CD364, beside the category index: 1 on
+    # entry, Up and Down by one with a floor of one, Right to the most
+    # affordable, Left back to one -- fourteen cued presses on 2026-09-08,
+    # each read off its screenshot, and 0 whenever the picker is not up.
+    # **Baba's box does not change on this screen**: it keeps her last line,
+    # which was "Hey, you don't have enough money!!" on every capture, so it
+    # is deliberately not read here. An earlier build spoke it, from a
+    # log-only mapping, and was wrong.
+    #
+    # Cross on an item the player cannot afford does **not** enter the
+    # picker: the state stays 0x08, the list, and only Baba's line changes.
+    # So the list variants read the display pointer as a second slot, spoken
+    # on change -- the refusal is heard, the prompt on arrival is not.
+    #
+    # What Cross does in the picker -- a further question, or the sale --
+    # has not been seen; nothing has been bought. That state will be logged
+    # by value when it happens, like this one was.
+    Screen(
+        "Item Shop", 0x00984118, b"mc_item_category_icon_on",
+        in_adventure=True,
+        state_address=0x008CD36C,
+        variants=(
+            (0x00, Screen(
+                "Item Shop", 0x00984118, b"mc_item_category_icon_on",
+                0x008CC32C, 1, {0: "Buy Z Item", 1: "Sell Z Item"},
+                mirror=0x00532943, mirror_stride=2, in_adventure=True)),
+            (0x08, Screen(
+                "Buy Z Item", 0x00984118, b"mc_item_category_icon_on",
+                in_adventure=True, list_view=SHOP_LIST,
+                name_pointers=((0x008C6244, None),))),
+            (0x18, Screen(
+                "Sell Z Item", 0x00984118, b"mc_item_category_icon_on",
+                in_adventure=True, list_view=SHOP_LIST,
+                name_pointers=((0x008C6244, None),))),
+            (0x28, Screen(
+                "How many", 0x00984118, b"mc_item_category_icon_on",
+                in_adventure=True, quantity_view=QuantityView(0x008CD364))),
+        ),
+    ),
     # The two-player character select, reached from the battle modes. Two
     # horizontal rows of portraits, player 1 above and player 2 below, with
     # each player's highlighted name drawn as text between them.
@@ -883,6 +1097,20 @@ class MenuReader:
         return False, False
 
     def _detect(self, pine) -> tuple[Screen | None, bool]:
+        """Identify the screen, then the variant of it that is up, if any."""
+        screen, trusted = self._detect_base(pine)
+        if screen is None or not screen.variants:
+            return screen, trusted
+        variant = screen.resolve(pine)
+        if variant is None:
+            self._note_once(
+                f"menus: {screen.name} is in a state this build has not "
+                f"mapped, so only its name is said -- "
+                f"0x{screen.state(pine):02x} at 0x{screen.state_address:08X}")
+            return screen, trusted
+        return variant, trusted
+
+    def _detect_base(self, pine) -> tuple[Screen | None, bool]:
         """Identify the screen, or return None rather than guess.
 
         Every screen is checked, not just the first that matches. Markers were
@@ -1016,7 +1244,7 @@ class MenuReader:
         if not self.reads_options():
             return
 
-        if self.screen.name_pointers:
+        if self.screen.speaks_names:
             self._speak_displayed_names(pine)
             return
 
@@ -1093,8 +1321,8 @@ class MenuReader:
                 self._last_slot = 0
                 self.speaker.say(first)
             return
-        for slot, (name, (_, prefix)) in enumerate(
-                zip(names, self.screen.name_pointers)):
+        for slot, (name, prefix) in enumerate(
+                zip(names, self.screen.name_prefixes)):
             if name is None or name == previous[slot]:
                 continue
             line = name

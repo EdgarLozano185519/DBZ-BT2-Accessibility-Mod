@@ -4,7 +4,7 @@ Screen reader support for Dragon Ball Z: Budokai Tenkaichi 2, played in PCSX2.
 Read this first when resuming. Details of every address live in
 `docs/memory-map.md`.
 
-Last updated: 2026-09-08.
+Last updated: 2026-09-08, end of the day.
 
 ## What works today
 
@@ -54,6 +54,23 @@ Menus speak through NVDA, driven by the game's own memory:
   the mod flickering between "Unknown screen" and "New Game" there, which is
   what closed the title-marker hole above. **Heard in play the same day**:
   the log holds the screen's name and four fighters after it.
+- **Item Shop** -- mapped 2026-09-08 evening, from the Buy/Sell menu down
+  to the item lists. The menu speaks Buy Z Item and Sell Z Item from a
+  cursor with two agreeing copies; each list speaks the highlighted Z-item's
+  name **from the game's own text**, through the same draw slots the
+  character select uses, so nothing was transcribed. Scrolling, the end of
+  the list and all four category tabs are covered, from 55 captures over two
+  cued walks with the player. Prices, the category names and the item
+  explanation are not read. The guide had been announcing **"Select
+  Scenario"** over the shop, by the stale Dragon Adventure marker. **Heard
+  in play the same night**: the 23:03 log names the menu and every item in
+  all four tabs. Cross on an affordable item opens a **how-many picker**,
+  mapped from a third walk the same night: "How many", then "times 1",
+  "times 2"... as Up, Down, Left and Right move it. Cross on one the player
+  cannot afford is refused in the list, and Baba's "Hey, you don't have
+  enough money!!" is spoken as it appears. The Zeni left that the picker
+  shows is not spoken: nothing in RAM holds the price. What Cross does in
+  the picker -- the sale -- has not been seen; see item 6.
 - **C teaches this map's scale by teleporting, so T can reach the story
   marker.** Added and **confirmed in play 2026-09-07**, twice on the Blue
   landmass map, after which T reached the story objective. Six short commanded
@@ -374,7 +391,10 @@ above has incidentally made this much stricter: a stale pointer left aiming at
 menu text after a scene ends is now refused by address as well as by content.
 The remaining exposure is a stale pointer still inside the scene buffer.
 
-**4. ~~Should this be stamped as a release?~~** Done: 2026.09.08-r1, at the
+**4. ~~Should this be stamped as a release?~~** Done twice: 2026.09.08-r1,
+and 2026.09.08-r5 with the whole Item Shop at the end of that day, tagged
+and committed at the player's request; r3 and r4 in between were never
+handed out and their zips are gone. The r1 note follows: at the
 player's request, with a release zip built beside it. The spoken version in
 `guide_host.py` had been left at 2026.09.05-r4 through the 09.07 stamp and is
 bumped with this one; the log's first line is what shows which build a player
@@ -390,8 +410,9 @@ earned their place. The cutscene duplicates are the ones to drop first.
 
 **6. Should OCR be tried for the screens that are still silent?** Raised by the
 player 2026-09-07. It would not have helped the scenario list -- that was an
-identity problem, and memory answered it -- but the unmapped menus (Item Shop,
-Data Center, Ultimate Battle Z, Evolution Z, the story event list) are silent
+identity problem, and memory answered it -- and the Item Shop has since come
+off the list without it: its labels were artwork, but its item names were the
+game's own text. The unmapped menus (Data Center, Ultimate Battle Z, Evolution Z, the story event list) are silent
 precisely because their labels are artwork. Notes on engines, costs and the
 risk of confident misreadings are under *Reading labels that are artwork*
 below. Nothing is installed, and no OCR has been attempted yet.
@@ -431,6 +452,13 @@ marker's exclusivity is only as good as the routes the captures took.**
 **The mitigation is in.** A marker known to outlive its screen loses to one
 that is not, and which markers those are is recorded from what has been seen.
 Both errors above are covered, and `test_menus.py` holds them.
+
+**A post-Adventure capture now exists**, though not of the main menu:
+`ishop0`, the Item Shop reached from the main menu after a Dragon Adventure
+session, on 2026-09-08. On it Select Scenario's marker is still present and
+Game Level's is not, which is the first direct measurement of the log's
+report. A main-menu capture by the same route is still the one that would
+show which Dragon Adventure addresses are clean *there*.
 
 **The repair is not.** By this project's own standard `0x00D53440` is now a
 retired address -- it has been seen naming a screen that was not up, exactly as
@@ -551,6 +579,10 @@ same confidence as the bug it was meant to fix. The table has to be walked;
 All cheap, all need the player at the controls. Ask before running any of
 them -- see Testing with the player.
 
+- **The Item Shop's picker, through the guide app.** Mapped from
+  captures; heard through the reader offline, not yet in play. Cross on an
+  affordable item: "How many", "times 1", then the count as the arrows move
+  it. Triangle: the list and item again.
 - **Game Level, leave and return.** Press Triangle to go back, re-pick the
   event, check it still tracks. Every cursor here is held to being tested on a
   transition it was not derived from; this one has not been. If it goes silent
@@ -586,6 +618,25 @@ them -- see Testing with the player.
 
 ### 6. Map the remaining screens
 
+- **The Item Shop's sale.** The picker is mapped; Cross inside it has
+  never been pressed, so whether Baba asks "Is this okay?" first or sells at
+  once, and what state byte that is, are unknown. It needs one real
+  purchase -- Health +1 at 5000 Zeni is the cheapest -- with the guide
+  running, which logs the state by value, or a snapshot on that screen with
+  the app closed. The Sell side's prompts and the item explanation behind
+  Square are the same shape of gap. **The price** is the other thing worth
+  a look: the picker shows the Zeni that would be left, and speaking it
+  needs the highlighted item's price, which no word in RAM holds directly.
+  It is drawn from sprite digits, so the number the game passes to that
+  draw is the place to look, or a price table indexed by item.
+- **A key that says the player's Zeni -- asked for by the player,
+  2026-09-08, late.** In the shop the balance is at `0x0063383C`: it read
+  173500 on every one of the 56 shop captures and that is what the screen
+  showed, but it has never been seen to *change*, because nothing has been
+  bought, so the first purchase is also its verification. Wire it the way
+  F12 is wired -- a key, one read, "173500 Zeni" -- and let it work
+  everywhere the word is plausible, since Zeni is spent outside the shop
+  too. Do not tie it to the picker's projected figure, which is not in RAM.
 - **The character select in Ultimate Battle Z.** Dragon Tournament turned
   out to load the same sprite at a different address, so Ultimate Battle Z
   probably does too. One `check` on that screen says where, and one line
@@ -899,6 +950,49 @@ one cued scan and no table at all.
   refuses garbage and move-list glyphs without knowing a single word.
 
 ## Recently finished
+
+### 2026-09-08, evening: the Item Shop speaks, from the menu to the picker
+
+One session, three sittings at the controls, 56 captures, release r5.
+
+- **The shop had been announced as "Select Scenario"**, by the Dragon
+  Adventure marker that outlives its screen. The first capture of the shop
+  (`ishop0`) was also the first capture on disk taken after Dragon Adventure
+  had been left, and it shows exactly that marker resident and Game Level's
+  not -- the per-screen table holds whichever Adventure screen was drawn
+  last. `test_menus.py` records the sighting in `STALE`.
+- **One marker, `mc_item_category_icon_on` at `0x00984118`, stays up through
+  the whole shop**, and a state byte at `0x008CD36C` tells the parts apart:
+  0 menu, 8 Buy list, 0x18 Sell list, 0x28 the how-many picker. `Screen`
+  gained `variants` for exactly this: the base screen names itself and keeps
+  the Adventure gate; an unmapped value is logged, which is how the picker
+  was found the same night.
+- **The Buy/Sell cursor** has the two-copy arrangement every other menu
+  here has, plain at `0x008CC32C` and doubled at `0x00532943`, and the static
+  copy is reused off the menu, so only the menu variant reads it.
+- **The lists needed no table of names.** Four text-draw slots hold the
+  four visible rows; a row cursor and a top-row byte per category tab give
+  `row - top`; the highlighted name is the game's own text. `ListView` does
+  this, verified on 41 list captures against their screenshots, scrolling
+  both ways, at the end of the list, and across all four tabs. **Heard in
+  play the same night**, every item in every tab.
+- **The how-many picker** after X: quantity at `0x008CD364`, Up and Down by
+  one with a floor of one, Right to the most affordable, Left to one.
+  `QuantityView` speaks it as "times N". Baba's box does not change there and
+  is not read; r4 had read it, from a log-only mapping, and was wrong.
+- **The refusal happens in the list**, not in the picker: the list variants
+  read the display pointer as a second slot, spoken on change, so "Hey, you
+  don't have enough money!!" is heard as it appears and the prompt is not
+  repeated on arrival.
+- **Not found: the price.** No word or halfword in RAM holds the highlighted
+  item's price, the total or the projected balance, at any scale, so the
+  Zeni the picker shows is not spoken. The real balance is at `0x0063383C`.
+- **Not seen: the sale.** X inside the picker has never been pressed.
+- **Tooling.** `positionscan --keep-going` and `--settle=`, for walking
+  through a menu into the screens behind it. The PCSX2 window was minimized
+  and `PrintWindow` cannot read one, so the lone capture's screenshot was
+  taken by restoring it without focus; the walks had the game in front.
+- **Suites**: 639 menu checks (from 349) and 46 story checks.
 
 ### 2026-09-08: the character select speaks, and needed no cursor
 

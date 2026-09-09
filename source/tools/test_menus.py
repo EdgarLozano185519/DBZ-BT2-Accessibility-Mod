@@ -62,6 +62,9 @@ CAPTURES = {
     "csel25": "Character Select",
     "csel26": "Character Select",
     "tourn0": "Tournament Character Select",
+    # The Item Shop's Buy/Sell menu, reached from the main menu after a
+    # Dragon Adventure session: the Select Scenario marker is still resident.
+    "ishop0": "Item Shop",
     # The scenario list at each of its four rows, once a fourth unlocked.
     "row0": "Select Scenario",
     "row1": "Select Scenario",
@@ -72,6 +75,55 @@ CAPTURES = {
     "cut0": None, "cut1": None, "cut2": None, "cut3": None,
     "cut4": None, "cut5": None, "cut6": None, "cut7": None,
 }
+
+# The Item Shop, from two cued walks on 2026-09-08 (`shop*` through the
+# Buy/Sell menu and into both lists, `scroll*` scrolling the Buy list and
+# visiting every category tab). Each entry is the screen and the highlighted
+# entry read off the screenshot beside the capture. "Buy Z Item" and "Sell Z
+# Item" are variants of the Item Shop screen, not screens with markers of
+# their own; see VARIANT_OF.
+SHOP = {
+    "shop0": ("Item Shop", "Sell Z Item"),
+    "shop2": ("Item Shop", "Buy Z Item"),
+    "shop7": ("Buy Z Item", "Health +1"),
+    "shop8": ("Buy Z Item", "Ki +1"),
+    "shop9": ("Buy Z Item", "Attack +1"),
+    "shop10": ("Buy Z Item", "Dragon Homing Uses +1"),
+    "shop13": ("Buy Z Item", "I am Champion!!"),
+    "shop14": ("Buy Z Item", "Gravity Device"),
+    "shop15": ("Buy Z Item", "Attack +1"),
+    "shop16": ("Buy Z Item", "Ki +1"),
+    "shop17": ("Item Shop", "Buy Z Item"),
+    "shop18": ("Item Shop", "Sell Z Item"),
+    "shop19": ("Sell Z Item", "Health +1"),
+    "shop22": ("Sell Z Item", "Ki +1"),
+    "shop23": ("Item Shop", "Sell Z Item"),
+    "scroll5": ("Buy Z Item", "Speed +1"),
+    "scroll6": ("Buy Z Item", "Equipment Slots +2"),
+    "scroll8": ("Buy Z Item", "Blast 2 +1"),
+    "scroll9": ("Buy Z Item", "Blast 1 +1"),
+    "scroll12": ("Buy Z Item", "Defense +1"),
+    "scroll13": ("Buy Z Item", "Attack +1"),
+    "scroll19": ("Buy Z Item", "Ultimate Blast +1"),
+    "scroll24": ("Buy Z Item", "Ultimate Blast +1"),
+    "scroll26": ("Buy Z Item", "Z Item Fusion"),
+    "scroll28": ("Buy Z Item", "Dragon Radar"),
+    "scroll30": ("Item Shop", "Buy Z Item"),
+    # The how-many picker (`qty*`, 2026-09-08): Up, Up, Down, Right, Right,
+    # Left, then Triangle out, Right to the Secret tab, Cross on an item the
+    # player cannot afford, Triangle out to the menu.
+    "qty0": ("How many", "times 2"),
+    "qty1": ("How many", "times 3"),
+    "qty3": ("How many", "times 8"),
+    "qty5": ("How many", "times 1"),
+    "qty14": ("Buy Z Item", "King Yemma's Stamp"),
+    "qty16": ("Buy Z Item", "Dragon Radar"),
+    "qty17": ("Item Shop", "Buy Z Item"),
+    "shop_stamp": ("How many", "times 1"),
+}
+CAPTURES.update({name: screen for name, (screen, _) in SHOP.items()})
+VARIANT_OF = {"Buy Z Item": "Item Shop", "Sell Z Item": "Item Shop",
+              "How many": "Item Shop"}
 
 # The prose on screen in each capture, read off the same screenshots. F12 must
 # reach these whether or not the screen has a recorded subtitle table.
@@ -86,6 +138,9 @@ PROSE = {
     "posn0": "Man, I'm hungry...",
     # The character select draws a glyph after this name; F12 says the name.
     "charsel0": "Goku",
+    "ishop0": "Hehehe, money makes the world go round. What'll you have today?",
+    "shop7": "Which Z-item do you want?",
+    "shop19": "Which Z-item do you want to sell?",
     "cut0": "I guess your little pet monsters weren't as strong as you thought.",
 }
 
@@ -183,6 +238,19 @@ def reader(story_reader=None) -> menus.MenuReader:
     return menus.MenuReader(Recorder(), story=story_reader)
 
 
+# Markers seen still resident on a capture of some other screen. Each entry is
+# a measurement, not an allowance: the marker must carry
+# `marker_outlives_screen`, detection must still name the capture's own screen
+# (test_detection), and a stale match anywhere not listed here still fails.
+# ishop0 is the first capture on disk taken after Dragon Adventure had been
+# left, and it shows what the 2026-09-07 log reported: Select Scenario's
+# marker at 0x00D53440 is still there. Game Level's is not.
+STALE = {
+    "ishop0": {"Select Scenario"},
+}
+STALE.update({name: {"Select Scenario"} for name in SHOP})
+
+
 def test_markers() -> None:
     """Every screen's markers match its own captures and no others."""
     print("\nMarkers, against every capture on disk:")
@@ -194,7 +262,11 @@ def test_markers() -> None:
         for screen in menus.SCREENS:
             if screen.weak_marker:
                 continue        # Known not to be exclusive; see Title.
-            want = screen.name == expected
+            want = screen.name == VARIANT_OF.get(expected, expected)
+            if screen.name in STALE.get(name, ()):
+                check(f"{screen.name} is flagged as outliving its screen",
+                      screen.marker_outlives_screen)
+                want = True     # Measured stale on this capture; see STALE.
             got = screen.present(pine)
             if want != got:
                 check(f"{screen.name} on {name}", False,
@@ -841,7 +913,8 @@ def test_the_weak_marker_needs_a_silent_screen() -> None:
             continue
         if not title.present(pine):
             continue
-        own = next(s for s in menus.SCREENS if s.name == expected)
+        own = next(s for s in menus.SCREENS
+                   if s.name == VARIANT_OF.get(expected, expected))
         erased = ErasedPine(pine, own.marker_address, len(own.marker))
         found, _ = reader()._detect(erased)
         check(f"{name} without its marker is not called Title",
@@ -926,6 +999,100 @@ def test_character_select_names() -> None:
               f"said {told.speaker.said}")
 
 
+def test_item_shop() -> None:
+    """The shop's menu and both lists speak what the screenshots show."""
+    print("\nItem Shop:")
+    for name, (screen_name, want) in SHOP.items():
+        pine = load(name)
+        if pine is None:
+            check(f"{name} present", False, "capture missing")
+            continue
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        said = menu.speaker.said
+        check(f"{name} says {want!r}", said == [screen_name, want],
+              f"said {said}")
+        told = story.StoryReader(Recorder())
+        told.poll(pine)
+        told.poll(pine)
+        check(f"{name}: the story reader stays quiet", told.speaker.said == [],
+              f"said {told.speaker.said}")
+
+    # Walking from the menu into the Buy list and back: the variant is named
+    # on each change, and the option or item after it.
+    menu_up, list_up, back = load("shop2"), load("shop7"), load("shop17")
+    if menu_up and list_up and back:
+        menu = reader()
+        for tick in range(4):
+            menu.poll(menu_up, tick * 0.1)
+        for tick in range(4):
+            menu.poll(list_up, 1 + tick * 0.1)
+        for tick in range(4):
+            menu.poll(back, 2 + tick * 0.1)
+        check("menu, list, menu is spoken as such",
+              menu.speaker.said == ["Item Shop", "Buy Z Item", "Buy Z Item",
+                                    "Health +1", "Item Shop", "Buy Z Item"],
+              f"said {menu.speaker.said}")
+
+    # A state byte this build has not mapped -- a dialog the walks never
+    # reached -- names the shop and reads nothing, and still counts as a menu
+    # inside Adventure so guidance stays off.
+    if menu_up:
+        shop = next(s for s in menus.SCREENS if s.name == "Item Shop")
+        unknown = PatchedPine(menu_up, {shop.state_address: b"\x40"})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(unknown, tick * 0.1)
+        check("an unmapped shop state names the shop only",
+              menu.speaker.said == ["Item Shop"], f"said {menu.speaker.said}")
+        check("and does not read options", not menu.reads_options())
+        check("and still holds the Adventure gate",
+              menu.in_adventure_menu(unknown))
+    # The refusal: Cross on an item the player cannot afford leaves the list
+    # up and changes only Baba's line. qty15 and qty16 both show the refusal
+    # already (it is stale from an earlier one), so the prompt is put back
+    # on the first capture and the change is watched.
+    before, after = load("qty15"), load("qty16")
+    if before and after:
+        import struct
+        asking = PatchedPine(before, {0x008C6244: struct.pack("<I", 0x00B05080)})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(asking, tick * 0.1)
+        check("the list names the item, not the prompt, on arrival",
+              menu.speaker.said == ["Buy Z Item", "Dragon Radar"],
+              f"said {menu.speaker.said}")
+        for tick in range(4):
+            menu.poll(after, 1 + tick * 0.1)
+        check("a refusal is spoken when Baba's line changes",
+              menu.speaker.said[2:] == ["Hey, you don't have enough money!!"],
+              f"said {menu.speaker.said}")
+
+    # The picker: the quantity is spoken as it moves, and the stale line in
+    # Baba's box is not.
+    steps = [load(f"qty{n}") for n in (0, 1, 2, 3, 5)]
+    if all(steps):
+        menu = reader()
+        for index, pine in enumerate(steps):
+            for tick in range(4):
+                menu.poll(pine, index + tick * 0.1)
+        check("the picker speaks each quantity once",
+              menu.speaker.said == ["How many", "times 2", "times 3",
+                                    "times 2", "times 8", "times 1"],
+              f"said {menu.speaker.said}")
+        check("and never Baba's stale line",
+              not any("money" in line for line in menu.speaker.said))
+        # The Buy/Sell cursor's two copies disagree off the menu, so the base
+        # screen must never read it: the list captures prove the copies apart.
+        selling = load("shop19")
+        if selling:
+            variant = shop.resolve(menu_up)
+            raw, label, settled = variant.option(selling)
+            check("the menu cursor is refused on the Sell list capture",
+                  not settled, f"raw {raw}, label {label!r}")
+
+
 def test_a_moved_block() -> None:
     """A menu whose own block has moved is still named, and found again.
 
@@ -1005,6 +1172,7 @@ def main() -> int:
     test_a_newly_unlocked_scenario_costs_one_row()
     test_character_select_names()
     test_player_two()
+    test_item_shop()
     test_the_weak_marker_needs_a_silent_screen()
     test_a_moved_block()
     test_unmoved_captures_are_not_searched()

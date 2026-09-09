@@ -32,6 +32,9 @@ __pycache__/
 # Deliberately not anchored, so it holds wherever a reference folder appears.
 reference/
 
+# The player's own screenshots of the running game, dropped in for a session.
+/UserScreenshots/
+
 # Learned map atlas written by running from source; per machine, and can
 # carry map names the player chose.
 source/profiles/

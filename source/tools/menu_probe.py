@@ -986,11 +986,10 @@ def check() -> int:
                 print("  its own block was NOT found in the search band")
             else:
                 print(f"  its own block has moved by {shift:+#x}")
-        if found is not None and found.name_pointers and trusted:
-            for (address, prefix), name in zip(found.name_pointers,
-                                               found.displayed_names(client)):
-                print(f"name:     {name!r} through 0x{address:08X}"
-                      + (f" ({prefix})" if prefix else ""))
+        if found is not None and found.speaks_names and trusted:
+            for prefix, name in zip(found.name_prefixes,
+                                    found.displayed_names(client)):
+                print(f"name:     {name!r}" + (f" ({prefix})" if prefix else ""))
         elif found is not None and found.readable and trusted:
             raw, label, settled = found.option(client)
             print(f"cursor:   raw {raw} -> {label!r}" +
@@ -1020,7 +1019,8 @@ def check() -> int:
 
 
 def positionscan(screen_name: str, cues: list[str], lead: int = 20,
-                 settle: float = 4.0, prefix: str = "posn") -> int:
+                 settle: float = 4.0, prefix: str = "posn",
+                 keep_going: bool = False) -> int:
     """Capture RAM and screen after each cued key press.
 
     The press scan assumes a menu that wraps and answers to one repeated key.
@@ -1030,6 +1030,12 @@ def positionscan(screen_name: str, cues: list[str], lead: int = 20,
     paired with a screenshot so the position can be **read back afterwards**
     rather than assumed -- one missed press would otherwise poison the whole
     correlation while looking fine.
+
+    `keep_going` carries on capturing after the screen's marker has gone.
+    That is for walking *through* a menu into the screens behind it -- the
+    Item Shop's Buy and Sell lists, say -- where losing the marker is the
+    point of the press rather than a sign the player is lost.  The
+    screenshots say which screen each capture is of.
     """
     from probe_voice import Voice
     from bt2 import vision
@@ -1058,9 +1064,11 @@ def positionscan(screen_name: str, cues: list[str], lead: int = 20,
             voice.cue(f"{cue} once")
             time.sleep(settle)
             if not screen.present(client):
-                voice.say("Screen changed. Stopping.")
-                break
-            vision.capture_game_window().save(STORE / f"{prefix}{index}.png")
+                if not keep_going:
+                    voice.say("Screen changed. Stopping.")
+                    break
+                print(f"  ({screen_name}'s marker is gone; capturing anyway)")
+            _capture_screen(STORE / f"{prefix}{index}.png")
             chunks = []
             for address in range(DEFAULT_BASE, FULL_END, CHUNK_BYTES):
                 size = min(CHUNK_BYTES, FULL_END - address)
@@ -1257,6 +1265,7 @@ def main(argv: list[str]) -> int:
         return dryrun(span)
     if command == "positionscan":
         target, cues, lead, prefix = "Main Menu", ["Left", "Right"], 20, "posn"
+        settle = 4.0
         for argument in argv[2:]:
             if argument.startswith("--screen="):
                 target = argument.split("=", 1)[1]
@@ -1269,7 +1278,10 @@ def main(argv: list[str]) -> int:
                 # test_menus.py checks; a new screen's captures need a name
                 # of their own or they overwrite the evidence for an old one.
                 prefix = argument.split("=", 1)[1]
-        return positionscan(target, cues, lead, prefix=prefix)
+            elif argument.startswith("--settle="):
+                settle = float(argument.split("=", 1)[1])
+        return positionscan(target, cues, lead, settle, prefix=prefix,
+                            keep_going="--keep-going" in argv)
     if command == "fit":
         if len(argv) < 3:
             print("Usage: fit 2,1,2,3,2,1   (positions read off the screenshots)")
@@ -1315,7 +1327,7 @@ def main(argv: list[str]) -> int:
     print("  rowscan ADDR... [--capture]")
     print("                           photograph every row the player visits")
     print("  watch ADDR...            what a few addresses do while you move")
-    print("  positionscan / fit / pressscan / autoscan / labels / keys /")
+    print("  positionscan [--keep-going --settle=S] / fit / pressscan / autoscan / labels / keys /")
     print("  recorrelate              the older derivation tools")
     return 1
 

@@ -90,6 +90,12 @@ automatically. **NVDA is not bundled** — install it yourself if you want it.
   know which panel is speaking
 - **Tournament Character Select**, the Dragon Tournament entry screen — every
   fighter on the strip
+- **The Item Shop** — Buy Z Item and Sell Z Item; then every Z-item in either
+  list as you move through it, across all four category tabs and however far
+  the list scrolls; the how-many picker after X on an item, spoken as
+  "times 1", "times 2" and so on as Up, Down, Left and Right move it; and
+  Baba's "Hey, you don't have enough money!!" when the game refuses. The
+  item names are read from the game's own text, like the fighters
 
 The character names are read from the game's own text as it draws them, so
 every fighter on the disc is covered without a list, and a badge the game
@@ -263,8 +269,15 @@ indistinguishable from "working, nothing to say":
   does, and the difficulty screen after it does, but choosing the individual
   event between them is still done blind
 - Dragon Library is named but its entries are not read. Ultimate Battle Z,
-  the item shop and battle menus are not recognised at all; Ultimate Battle
-  Z's character select probably needs one line to add, but has not been seen
+  Data Center, Evolution Z and the battle menus are not recognised at all;
+  Ultimate Battle Z's character select probably needs one line to add, but
+  has not been seen
+- **In the Item Shop, prices and the Zeni you would have left are not
+  spoken.** They are drawn as sprite digits and no address holding the price
+  has been found. What happens after X inside the how-many picker — the sale
+  itself — has not been seen, and neither have the Sell side's questions.
+  Your balance is not on a key yet; that is the next thing planned for the
+  shop
 - **The scenario descriptions are not read.** The introduction to each Dragon
   Adventure scenario sits in the game's memory and can be found. The guide now
   knows which scenario is highlighted, so this has become possible; what is
@@ -308,13 +321,19 @@ local paths. **Do not send game dumps, BIOS files or saves.**
 
 ## About this build
 
-**2026.09.08-r1** adds the two character selects above, and closes a fault
-that had the guide say "New Game" over screens that were not the title: the
-title screen's marker is now refused while the game is drawing text. Player
-1 and the tournament screen have been heard in play; player 2 is verified
-against screenshots and not yet heard through the app.
+**2026.09.08-r5** adds the Item Shop: the Buy/Sell menu, both item lists,
+the how-many picker and the refusal, all heard in play the same night except
+the picker, which was mapped from captures at the controls and has been heard
+through the reader offline. It also stops the guide saying "Select Scenario"
+over the shop, which a marker left behind by Dragon Adventure had caused.
+Releases r2 through r4 the same day were intermediate: r2 added maps with no
+destination table, and r3 and r4 were never handed out.
 
-This release omits the 44 `api-ms-win-*.dll` compatibility stubs that release
+**2026.09.08-r1** added the two character selects above, and closed a fault
+that had the guide say "New Game" over screens that were not the title: the
+title screen's marker is now refused while the game is drawing text.
+
+Since r1 the releases omit the 44 `api-ms-win-*.dll` compatibility stubs that release
 2026.09.05-r4 carried. They forward to the Universal C Runtime, which ships
 inside Windows 10 and 11 — and Windows 10/11 x64 is what this guide requires —
 so nothing a supported system needs was lost.
