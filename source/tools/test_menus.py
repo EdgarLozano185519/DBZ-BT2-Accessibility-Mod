@@ -72,6 +72,25 @@ CAPTURES = {
     "row3": "Select Scenario",
     "scen3_fb": "Select Scenario",
     "scen5_final": "Select Scenario",
+    # The story event list, one screen deeper than Select Scenario, on the
+    # first event of the Saiyan Saga.
+    "event_a": "Story Events",
+    # The cued walk of 2026-09-09: Down, Down, Up, then five Downs through
+    # a scroll, Triangle back to the scenario list, Cross back in -- which
+    # opens on the game's question, no row highlighted -- and Cross on to
+    # Game Level. Each screen read off the screenshot beside the capture.
+    **{f"evt{n}": "Story Events" for n in range(8)},
+    "evt8": "Select Scenario",
+    "evt9": "Story Events",
+    "evt10": "Game Level",
+    # Tree of Might's list, on its row 01, taken after the guide had gone
+    # silent there in play: a second scenario, and Game Level's heading
+    # pair still resident at full alpha but pushed off the left edge.
+    "tree_a": "Story Events",
+    # Lord Slug's list, on its row 00, taken after the guide had gone silent
+    # there in play: a name that wraps onto two lines sits nine pixels
+    # above its number.
+    "slug_a": "Story Events",
     "cut0": None, "cut1": None, "cut2": None, "cut3": None,
     "cut4": None, "cut5": None, "cut6": None, "cut7": None,
 }
@@ -141,6 +160,18 @@ PROSE = {
     "ishop0": "Hehehe, money makes the world go round. What'll you have today?",
     "shop7": "Which Z-item do you want?",
     "shop19": "Which Z-item do you want to sell?",
+    # The synopsis box, not the line the display pointer aims at, which is
+    # drawn below the bottom of the screen.
+    "event_a": ("Suddenly, the Saiyans attack Earth! "
+                "Can Goku and his friends prevail!"),
+    "evt7": ("Suddenly, the Saiyans attack Earth! "
+             "Can Goku and his friends prevail!"),
+    # Back in from Select Scenario: the question, where the synopsis was.
+    "evt9": "Which story event will you start your adventure from?",
+    "evt10": "Got it? The next one's the last one!",
+    "tree_a": ("The Saiyan Turles attacks Earth! "
+               "The Z Fighters and Goku fight back!"),
+    "slug_a": "The evil Namek Slug appears! Can Goku protect the Earth?",
     "cut0": "I guess your little pet monsters weren't as strong as you thought.",
 }
 
@@ -246,9 +277,19 @@ def reader(story_reader=None) -> menus.MenuReader:
 # left, and it shows what the 2026-09-07 log reported: Select Scenario's
 # marker at 0x00D53440 is still there. Game Level's is not.
 STALE = {
-    "ishop0": {"Select Scenario"},
+    "ishop0": {"Select Scenario", "Story Events"},
+    # The event list is drawn from the scenario list's own allocation, so the
+    # marker is the same bytes on both; the state byte is what tells them
+    # apart, and the list's marker on this capture is therefore expected.
+    "event_a": {"Select Scenario"},
+    **{f"evt{n}": {"Select Scenario"} for n in (0, 1, 2, 3, 4, 5, 6, 7, 9)},
+    "tree_a": {"Select Scenario"},
+    "slug_a": {"Select Scenario"},
+    "evt8": {"Story Events"},
+    # evt10, Game Level reached through the list, has neither: the sprite
+    # table was rewritten on the way, which diff0 had already shown.
 }
-STALE.update({name: {"Select Scenario"} for name in SHOP})
+STALE.update({name: {"Select Scenario", "Story Events"} for name in SHOP})
 
 
 def test_markers() -> None:
@@ -266,7 +307,13 @@ def test_markers() -> None:
             if screen.name in STALE.get(name, ()):
                 check(f"{screen.name} is flagged as outliving its screen",
                       screen.marker_outlives_screen)
-                want = True     # Measured stale on this capture; see STALE.
+                # Measured stale on this capture; see STALE. The bytes must
+                # still be there, or the entry is out of date. Whether the
+                # screen then counts as present is for its state byte to
+                # say, and either answer is right.
+                check(f"{screen.name}'s marker is still resident on {name}",
+                      screen.primary.present(pine))
+                continue
             got = screen.present(pine)
             if want != got:
                 check(f"{screen.name} on {name}", False,
@@ -457,7 +504,12 @@ def test_a_stale_marker_loses() -> None:
         return
     scenario = next(s for s in menus.SCREENS if s.name == "Select Scenario")
     at, name = scenario.primary.first
-    stale = PatchedPine(base, {at: name})
+    # Since 2026-09-09 the marker alone is refused unless the Dragon
+    # Adventure menu byte reads 0 as well. Off the mode that byte is
+    # arbitrary, so this is the worst case: it happens to read 0, the
+    # leftover matches in full, and precedence is what still has to hold.
+    stale = PatchedPine(base, {at: name,
+                               scenario.state_address: bytes([scenario.state_value])})
 
     check("the leftover really does match", scenario.present(stale))
     menu = reader()
@@ -895,6 +947,160 @@ class ErasedPine(CapturePine):
         super().__init__(bytes(data), inner.base)
 
 
+def test_story_events() -> None:
+    """The event list names the highlighted event from the game's own text."""
+    print("\nStory Events:")
+    import struct
+    pine = load("event_a")
+    if pine is None:
+        check("event_a present", False, "capture missing")
+        return
+    menu = reader()
+    for tick in range(4):
+        menu.poll(pine, tick * 0.1)
+    check("the screen and the highlighted event are spoken",
+          menu.speaker.said == ["Story Events", "00 Mysterious Alien Warrior"],
+          f"said {menu.speaker.said}")
+    check("it holds the Adventure gate", menu.in_adventure_menu(pine))
+    told = story.StoryReader(Recorder())
+    told.poll(pine)
+    told.poll(pine)
+    check("the story reader stays quiet", told.speaker.said == [],
+          f"said {told.speaker.said}")
+
+    # The cued walk, played through one reader as the frames arrived.
+    walk = [load(f"evt{n}") for n in range(11)]
+    if all(walk):
+        menu = reader()
+        for index, frame in enumerate(walk):
+            for tick in range(4):
+                menu.poll(frame, index + tick * 0.1)
+        want = ["Story Events", "01 Kakarot", "02 Common Enemy", "01 Kakarot",
+                "02 Common Enemy", "03 Gohan and Piccolo", "04 Saiyan Blood",
+                "05 Training in Heaven", "06 Training with King Kai",
+                "Select Scenario", "Saiyan Saga",
+                "Story Events",
+                "Which story event will you start your adventure from?",
+                "Game Level. 06 Training with King Kai", "Level 2"]
+        check("the cued walk is spoken as the screenshots show",
+              menu.speaker.said == want, f"said {menu.speaker.said}")
+        # "Level 2" is there because the static mirror is gone: on this
+        # capture 0x00432D71 read 0 while the screen showed 2, and a spoken
+        # test the same day moved the cursor without the mirror following.
+        # Its old value must never silence the level again.
+        check("the retired mirror reads 0 here", walk[10].read8(0x00432D71) == 0)
+    else:
+        check("the walk's captures are present", False, "evt0-evt10 missing")
+
+    events = next(s for s in menus.SCREENS if s.name == "Story Events")
+    view = events.event_list
+    plain = struct.pack("<I", 0x80FDEAC8)      # the four unhighlighted rows
+    marked = struct.pack("<I", 0x8032E3FE)     # the highlighted row
+    # Paint the highlighted name like the others: no row stands out, so no
+    # row is named. Silence, not a guess.
+    alike = PatchedPine(pine, {0x008C6328 + 0x18: plain})
+    menu = reader()
+    for tick in range(4):
+        menu.poll(alike, tick * 0.1)
+    check("no row standing out means no row is named",
+          menu.speaker.said == ["Story Events"], f"said {menu.speaker.said}")
+    # Move the colour to the third row while the game's counter still says
+    # the first: the two readings disagree, and nothing is said.
+    moved = PatchedPine(pine, {0x008C6328 + 0x18: plain,
+                               0x008C6458 + 0x18: marked})
+    menu = reader()
+    for tick in range(4):
+        menu.poll(moved, tick * 0.1)
+    check("the colour alone does not name a row",
+          menu.speaker.said == ["Story Events"], f"said {menu.speaker.said}")
+    # Move the counter with it, and the third row is named.
+    agreed = PatchedPine(moved, {view.row: b"\x02"})
+    menu = reader()
+    for tick in range(4):
+        menu.poll(agreed, tick * 0.1)
+    check("colour and counter together name the row",
+          menu.speaker.said == ["Story Events", "02 Common Enemy"],
+          f"said {menu.speaker.said}")
+    # The state byte is all that separates this screen from Select Scenario.
+    back = PatchedPine(pine, {events.state_address: b"\x00"})
+    found, _ = reader()._detect(back)
+    check("state 0 on the same bytes is Select Scenario",
+          found is not None and found.name == "Select Scenario",
+          f"got {found and found.name}")
+    deeper = PatchedPine(pine, {events.state_address: b"\x02"})
+    found, _ = reader()._detect(deeper)
+    check("state 2 without Game Level's own marker names nothing",
+          found is None, f"got {found and found.name}")
+    # F12 reads the synopsis, not the line parked below the screen.
+    menu = reader()
+    menu.poll(pine, 0.0)
+    menu._speak_subtitle(pine, 0.0)
+    check("F12 reads the synopsis",
+          menu.speaker.said[-1] == PROSE["event_a"],
+          f"said {menu.speaker.said[-1]!r}")
+
+    # A second scenario, with Game Level's heading still resident in the
+    # array at full alpha and in the highlight colour, off the left edge.
+    # This is the capture the guide was silent on in play.
+    tree = load("tree_a")
+    if tree is not None:
+        menu = reader()
+        for tick in range(4):
+            menu.poll(tree, tick * 0.1)
+        check("Tree of Might's row 01 is spoken",
+              menu.speaker.said == ["Story Events", "01 Goku Targeted?"],
+              f"said {menu.speaker.said}")
+        # The counter that fitted the Saiyan Saga reads 0 here; the one for
+        # this scenario's slot reads 1. Silence would follow from the first.
+        check("the Saiyan Saga's own counter reads 0 here",
+              tree.read8(view.row) == 0)
+        check("and the scenario's slot reads the row",
+              view.counters(tree) == (1, 0), f"got {view.counters(tree)}")
+
+    # Lord Slug: three rows, the middle name on two lines. The guide was
+    # silent here in play because that row went unpaired, which left two
+    # rows of different colours and no odd one out.
+    slug = load("slug_a")
+    if slug is not None:
+        menu = reader()
+        for tick in range(4):
+            menu.poll(slug, tick * 0.1)
+        check("Lord Slug's row 00 is spoken",
+              menu.speaker.said == ["Story Events", "00 Terror! Evil Invaders!"],
+              f"said {menu.speaker.said}")
+        check("the two-line name is paired with its number",
+              [num for _, _, num, _ in view.rows(slug)] == ["00", "01", "02"],
+              f"rows {[num for _, _, num, _ in view.rows(slug)]}")
+        # Hide the third row: a two-row list, where the counter chooses.
+        hidden = struct.pack("<I", 0x00FDEAC8)
+        two = PatchedPine(slug, {0x008C6458 + 0x18: hidden})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(two, tick * 0.1)
+        check("a two-row list names the counter's row",
+              menu.speaker.said == ["Story Events", "00 Terror! Evil Invaders!"],
+              f"said {menu.speaker.said}")
+        # Counter on the other row, while the highlight has not moved: the
+        # left shift does not agree, and nothing is said.
+        lying = PatchedPine(two, {view.row + 4 * 2: b"\x01"})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(lying, tick * 0.1)
+        check("a two-row list refuses a counter the layout contradicts",
+              menu.speaker.said == ["Story Events"], f"said {menu.speaker.said}")
+
+    # Game Level's heading, on the capture from the other session: a
+    # different event, drawn at a different index of the array.
+    level = load("diff0")
+    if level is not None:
+        menu = reader()
+        for tick in range(4):
+            menu.poll(level, tick * 0.1)
+        check("Game Level says the chosen event after its name",
+              menu.speaker.said[0] == "Game Level. 00 Mysterious Alien Warrior",
+              f"said {menu.speaker.said}")
+
+
 def test_the_weak_marker_needs_a_silent_screen() -> None:
     """The title's raw signature is refused while the game draws text."""
     print("\nThe weak marker:")
@@ -1173,6 +1379,7 @@ def main() -> int:
     test_character_select_names()
     test_player_two()
     test_item_shop()
+    test_story_events()
     test_the_weak_marker_needs_a_silent_screen()
     test_a_moved_block()
     test_unmoved_captures_are_not_searched()

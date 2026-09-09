@@ -300,10 +300,18 @@ Reached after picking a story event. Three boxes side by side reading 1, 2 and
   `0x00D547C0` is absent on all seven Select Scenario captures and on every
   other screen.
 - `0x00B054A8` (byte) -- **cursor index, 0 to 2**, plain, beside the marker.
-- `0x00432D71` (byte) -- the **same index times four**. Mirrored at
-  `0x00432D91`, and again at `0x00532DF1` / `0x00532E11`; the `+0x10` neighbours
-  of each carry the signal offset by four. The same static-mirror idiom as
-  Options, at a different stride.
+- ~~`0x00432D71` (byte) -- the same index times four~~ **Retired 2026-09-09.**
+  On the first visit of a fresh session it read 0 while the screen showed 2
+  and `0x00B054A8` read 1; a spoken test then moved the cursor Right and Left
+  -- 1, 2, 1, each matching the screen -- and `0x00432D71`, `0x00432D91`,
+  `0x00532DF1` and `0x00532E11` stayed 0 throughout. It was never a copy of
+  this cursor; it agreed on the earlier captures by coincidence, and reading
+  it silenced the level on every first visit. **The cursor now stands alone**,
+  verified on that live test, which is a transition it was not derived from.
+  A genuine second copy would be welcome; none is known.
+- **The chosen event's number and name** are drawn at the top of this screen
+  as text and said after the screen's name on arrival -- see *Story Events*
+  below for where they are read from.
 
 - `0` Level 1, `1` Level 2, `2` Level 3
 
@@ -317,7 +325,10 @@ Two lines of real text sit alongside, identical in all six captures:
 - `0x00D179C2` -- "Set the Match level to your strength. You can always adjust
   it later!"
 
-The instruction line is read on **F12**, not spoken automatically.
+The instruction line is read on **F12**, not spoken automatically -- through
+the display pointer since 2026-09-09, not the recorded address: on the walk's
+capture the screen showed Goku's "Got it? The next one's the last one!" in its
+place, and the recorded address would have read the instruction over it.
 
 **The event name was removed from F12 on 2026-09-07**, when the player asked
 for F12 to be fixed. It announced the first event's name on every event, so
@@ -1281,6 +1292,140 @@ and minimized again; during the walks the player had the game in front.
 `positionscan --keep-going` was added for the walks, since losing the marker
 was never the point of a press here and the old rule stopped at it.
 
+## Story Events: the highlighted row is the one drawn in colour
+
+**Mapped 2026-09-09** from one capture, `event_a`, taken on the first event
+of the Saiyan Saga with the guide app closed, and **verified the same day on
+a cued walk of eleven presses**, `evt0`-`evt10`. This is the screen between
+Select Scenario and Game Level: the chosen scenario's events, five to a
+window, each numbered, with a synopsis box below and an achievement
+percentage in the corner.
+
+**What `check` said before anything was changed**: Select Scenario matched,
+the cursor read 0, and the mod would have said "Saiyan Saga" over this list
+with total confidence. The HUD heuristic called it gameplay too, so the
+screen also needs `in_adventure`.
+
+- **The marker is Select Scenario's marker**, and no other is available.
+  `mc_da_2_text_off_l` at `0x00D53440` is present here; the whole dynamic
+  allocation is shared with the scenario list, as it is with Game Level; and
+  of the 107 sprite names in the dynamic region not one is at an address it
+  does not also occupy in some other capture. The per-screen table gains
+  `mc_da_4_textwindow` at `0x00D54280` on this screen, but that entry is
+  also on the Game Level capture from the other session. It is not used.
+- **The state byte is what names the screen.** `0x00B054B0` reads **0 on
+  all fourteen Select Scenario captures**, **1 on all ten of this list**, and
+  **2 on both Game Level captures**, in the block at `0x00B05xxx` that holds
+  the scenario list's cursor and id array. On the walk it went 1, 0, 1, 2
+  across Triangle, Cross and Cross. Off the mode it is arbitrary -- 0xF4
+  through the whole shop, 0x36 on the main menu, 0x3C in cutscenes -- which
+  is harmless, because there a fresh marker outranks the stale one or the
+  marker is absent altogether; on the walk's Game Level capture the sprite
+  table had been rewritten and `0x00D53440` was gone. `Screen.state_value`
+  was added for this: Select Scenario demands 0 and Story Events demands 1
+  on the same marker, and a marker with the wrong value is not a match at
+  all, so the two can never collide. Game Level keeps its own marker and no
+  state requirement. (`0x00B052F4` looked like a second state byte on the
+  first capture -- 0, 0x18, 8 -- and is not: it read 8 on the scenario list
+  after Triangle and 0x28 on the list after Cross. Flags of some kind.)
+- **The rows are the game's text-draw structures**, 0x4C apart from
+  `0x008C6244`, the same array the shop's lists use. Each structure holds a
+  text pointer at +0, its screen position at +4 (x, y as halfwords), and a
+  colour at +0x18 (ABGR). The game hides text by zeroing the alpha or by
+  placing it below the bottom edge: the first structure's line ("You can
+  take a look at the events you cleared!", or "If you clear an event, your
+  acheivement rate will go up!" -- the game's spelling) sits at y=486 on a
+  448-line screen while the list is live, and the stale rows still present
+  on Game Level have alpha 0. **A row is a pair the text vouches for**:
+  digits, then a name, on the same line to within a pixel. The pairs are
+  found by scanning rather than at fixed indices, because when the list is
+  re-entered from Select Scenario the game inserts its question at the
+  front and every row shifts by one structure -- a fixed layout on that
+  frame read a number as a name and named "Training with King Kai" twice.
+- **The highlight is a colour.** The highlighted row's name is `0x8032E3FE`,
+  yellow, and every other row's `0x80FDEAC8`, white; the numbers go
+  `0x80FFFFF0` and `0x80C5C304` the same way. `EventList` names the row
+  whose name colour no other drawn row shares while all the others agree.
+  Across `event_a` and `evt0`-`evt7` -- rows 0, 1, 2, 1, 2, 3, 4, 5, 6, the
+  last two after the window had scrolled and the five structures had been
+  re-pointed -- it named the row in the screenshot every time. The shop
+  paints all its rows `0x80FFFFFF` and marks its highlight with a sprite, so
+  this rule is this screen's.
+- **The game's own row counter cross-checks it.** `fit` over the eight walk
+  captures left exactly one address for the row, `0x00B05378` (1, 2, 1, 2,
+  3, 4, 5, 6), and one for the window's top, `0x00B05440` (0 until row 5,
+  then 1, 2). Both read 0 on `event_a`, a capture they were not fitted to.
+  The slot at `row - top` must be the row the colour picked, or nothing is
+  said. Both hold their last value through Select Scenario and Game Level.
+  **Both are kept once per scenario, on a four-byte stride, indexed by the
+  scenario list's cursor at `0x00B0536C`.** The first build read the Saiyan
+  Saga's slot everywhere and was silent in play on Tree of Might, the
+  second scenario: `tree_a`, taken on the spot, shows its row 01 highlighted
+  with `0x00B05378` reading 0 and `0x00B0537C` reading 1, and the Saiyan
+  slot itself back to 0 after an event had been played -- so the counters
+  do not survive everything, and the reset is not understood. One capture
+  on the second scenario; a third scenario would confirm the stride.
+- **A hidden structure can pass every visibility test.** On `tree_a` the
+  array holds "Vegeta's Game" at (76, 287), full alpha, white, inside the
+  screen, and the screenshot shows an empty bar there; on `evt9` a yellow
+  duplicate of the highlighted name sits at (75, 284) the same way. Both
+  are byte-identical in every field to a drawn structure, so the game keeps
+  a count of live entries somewhere else; a search for a byte, a word or an
+  end pointer matching the live count across eight captures found nothing.
+  What keeps them out is the pairing rule: neither has a number beside it.
+  A stale *pair* at full alpha, on screen, past the live entries has not
+  been seen and would be the way this reading goes wrong.
+- **A name that wraps onto two lines sits nine pixels above its number**
+  -- "The Terrible Super Namekian!" on Lord Slug, `slug_a`, at y=133 against
+  its number's 142 -- where every one-line name sits within a pixel. The
+  first pairing rule allowed two pixels, dropped that row, and the guide
+  was silent on Lord Slug in play; rows are 48 apart, so the rule now
+  allows sixteen.
+- **Two rows cannot have an odd one out.** With one yellow and one white
+  row each colour is unique, so the colour can only say that they differ;
+  the counter chooses, and the chosen row must also be the one drawn a
+  step to the left -- the highlight is at x 41 and 75 against 43 and 76 on
+  every capture on disk, a second signal that costs nothing. Three or more
+  rows keep the colour rule with the counter as cross-check; one row is
+  itself if the counter reads 0. Final Battle was silent in play alongside
+  Lord Slug and has not been captured; a two-event list is the likely
+  reason, and this is the rule that would cover it.
+- **Game Level's heading pair does not go away** when the list comes back:
+  on `tree_a` it is still yellow and at full alpha, at x = -412. Positions
+  are signed halfwords, and `EventList.visible` refuses a negative one.
+- **The question state.** Coming back in from Select Scenario (`evt9`) the
+  screen shows the list with no row highlighted and "Which story event will
+  you start your adventure from?" where the synopsis was, drawn through the
+  first structure, now on screen at y=348. The counter still says the old
+  row, and Cross from there opens that event (`evt10` confirms). No row is
+  named, because the colour does not confirm one; the question is spoken
+  instead, and the row the moment a key moves it. The player who presses
+  Cross at once opens the last row they chose, without hearing it: known,
+  and honest, and better than the alternative.
+- **What is spoken**: the number and the name as the screen writes them,
+  "06 Training with King Kai", both through `story.displayed`, so a refused
+  pointer is a refused row. **The synopsis is per scenario, not per event**
+  -- "Suddenly, the Saiyans attack Earth!" on every row of the walk -- and
+  is read on **F12** through `Screen.prose_pointers`: the first structure if
+  it is on screen (the question), else the second (the synopsis), with no
+  fallback to the raw display pointer.
+- **Game Level draws the chosen event's number and name** at the top, in the
+  same array, at whichever index is free -- 4 and 5 on `diff0`, 12 and 13 on
+  `evt10` -- in the highlight colours, with the old rows beneath at alpha 0.
+  `Screen.heading` reads the one visible pair and it is said after the
+  screen's name on arrival: "Game Level. 06 Training with King Kai". Two
+  captures, two sessions, two events, two indices. This is the event name
+  that F12 used to get wrong, now read from where the screen draws it.
+- **Heard in play, 2026-09-09**, after three rounds: the Saiyan Saga first;
+  then Tree of Might, the Frieza Saga and Final Battle's neighbours once the
+  per-scenario counter was read; then Lord Slug, Final Battle and Fateful
+  Brothers once the two-line name paired -- the 12:41 log has every row of
+  the last three. Final Battle itself was never captured; it reads.
+- **Captures**: `event_a`; `evt0`-`evt7` the list; `evt8` Select Scenario
+  after Triangle; `evt9` the question state after Cross; `evt10` Game Level
+  after Cross; `evt_cues.txt` beside them; `tree_a` and `slug_a`, the two
+  scenarios the guide was silent on in play, each taken on the spot.
+
 ## Screens seen but not mapped
 
 - **Dragon Library** -- detected only.
@@ -1289,10 +1434,9 @@ was never the point of a press here and the old rule stopped at it.
 - **Ultimate Battle Z** -- not detected at all. The announcer correctly says
   "Unknown screen" there, which is the intended behaviour: naming a screen it
   cannot read would be worse than admitting it.
-- **The story event list** -- the screen between Select Scenario and Game
-  Level, where the individual events are chosen. Not captured, not detected.
-  It is the likeliest home of the current-event index that would make the F12
-  event name honest, so it is now the highest-value screen left.
+- **The story event list** -- mapped 2026-09-09 from one capture; see
+  *Story Events* below. A second row, a scrolled window and the way back
+  to Select Scenario are the parts not yet seen.
 
 ## The player's facing, on the world map
 

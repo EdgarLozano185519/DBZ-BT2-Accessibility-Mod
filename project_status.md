@@ -4,7 +4,7 @@ Screen reader support for Dragon Ball Z: Budokai Tenkaichi 2, played in PCSX2.
 Read this first when resuming. Details of every address live in
 `docs/memory-map.md`.
 
-Last updated: 2026-09-08, end of the day.
+Last updated: 2026-09-09, released as 2026.09.09-r1.
 
 ## What works today
 
@@ -25,9 +25,8 @@ Menus speak through NVDA, driven by the game's own memory:
   stays silent rather than guess.
 - **Game Level** -- the difficulty chooser inside Dragon Adventure, reached
   after picking a story event. Levels 1, 2 and 3, chosen with Left and Right.
-  F12 reads the instruction line, the game's own text. It used to read an event
-  name as well, which was the first event's name whatever the player had
-  chosen; that is gone as of 2026-09-07.
+  F12 reads the prose on screen through the game's own pointer. The event
+  name it used to read wrongly is back, right, as of 2026-09-09: see below.
 - **Select Scenario** -- the Dragon Adventure scenario list, chosen with Up and
   Down. Five scenarios on this save; **all twenty-five on the disc are named**,
   walked out of the game's own name table. Names are keyed by the game's own
@@ -71,6 +70,38 @@ Menus speak through NVDA, driven by the game's own memory:
   enough money!!" is spoken as it appears. The Zeni left that the picker
   shows is not spoken: nothing in RAM holds the price. What Cross does in
   the picker -- the sale -- has not been seen; see item 6.
+- **Story Events** -- the event list between Select Scenario and Game Level,
+  mapped 2026-09-09 and **verified the same day on a cued walk of eleven
+  presses with the player**. The highlighted event is spoken as the screen
+  writes it, number and name -- "06 Training with King Kai" -- from the text
+  the game is drawing: the highlighted row is the one painted in a different
+  colour, and the game's own row counter must name the same row. The names
+  come out of the game's own event table through its own pointers, so nothing
+  was transcribed. Scrolling past row 4 is covered. Coming back in from Select
+  Scenario the game asks "Which story event will you start your adventure
+  from?" with nothing highlighted; that is spoken, then the row once a key
+  moves it. F12 reads the synopsis, which is per scenario. Before this the
+  guide said **"Select Scenario"** and **"Saiyan Saga"** over the list, by the
+  stale marker; that screen and this one now each demand a different value of
+  a Dragon Adventure state byte on the same marker, so they cannot collide.
+  **Heard in play 2026-09-09** -- the 12:16 log has the Saiyan Saga's "06
+  Training with King Kai" -- and then **silent on Tree of Might**, because
+  the row counter is kept once per scenario and the first build read the
+  Saiyan Saga's slot everywhere. Fixed from a capture taken on the spot;
+  the live check names "01 Goku Targeted?" there now. Then **heard on Tree
+  of Might, Final Battle's neighbours and the Frieza Saga**, and silent on
+  **Lord Slug and Final Battle**: a two-line event name sat nine pixels
+  from its number and went unpaired, leaving two rows and no odd colour
+  out. Fixed from a capture on Lord Slug; the live check names "00 Terror!
+  Evil Invaders!" there. Two-row lists now let the game's counter choose,
+  checked against the highlight's one-step shift to the left. **Then heard
+  on Lord Slug, Final Battle and Fateful Brothers, every row** -- the 12:41
+  log -- which makes five scenarios heard in play and none silent.
+- **Game Level now says which event it is for**: "Game Level. 06 Training
+  with King Kai" on arrival, read from the text the screen draws at the top.
+  That closes the F12 event-name gap of 2026-09-07 from the other side. The
+  same day its second cursor copy was found not to be one -- see item 5 --
+  and retired, so the level speaks on a first visit again.
 - **C teaches this map's scale by teleporting, so T can reach the story
   marker.** Added and **confirmed in play 2026-09-07**, twice on the Blue
   landmass map, after which T reached the story objective. Six short commanded
@@ -391,8 +422,9 @@ above has incidentally made this much stricter: a stale pointer left aiming at
 menu text after a scene ends is now refused by address as well as by content.
 The remaining exposure is a stale pointer still inside the scene buffer.
 
-**4. ~~Should this be stamped as a release?~~** Done twice: 2026.09.08-r1,
-and 2026.09.08-r5 with the whole Item Shop at the end of that day, tagged
+**4. ~~Should this be stamped as a release?~~** Done three times: 2026.09.08-r1,
+2026.09.08-r5 with the whole Item Shop at the end of that day, and
+2026.09.09-r1 with the story event list, each tagged
 and committed at the player's request; r3 and r4 in between were never
 handed out and their zips are gone. The r1 note follows: at the
 player's request, with a release zip built beside it. The spoken version in
@@ -550,7 +582,7 @@ against the game's own table, so the two cannot drift apart by hand.
   `docs/memory-map.md` in case it is ever wanted live. Entering a scenario is
   the suspected trigger; it was never pinned down because it stopped mattering.
 
-### 4. The event name is gone from F12, and reading it properly still needs an index
+### 4. ~~The event name is gone from F12, and reading it properly still needs an index~~ Closed
 
 `0x00D1A782` was recorded as the Game Level event name. It is not a display
 slot -- it is entry 0 of a table of event names on a `0x40` granule, and it
@@ -574,19 +606,32 @@ continuation fragment -- "n!", "pe Baby", "use" -- and would speak it with the
 same confidence as the bug it was meant to fix. The table has to be walked;
 `story_probe.names` is the reference implementation and needs no player.
 
+**Closed 2026-09-09.** The event list is read from the drawn text, and Game
+Level draws the chosen event's number and name at the top of its own screen,
+which is now said on arrival. No index was needed: the game's own pointers
+into that table do the work. The row counter that was found, `0x00B05378`,
+is recorded in `docs/memory-map.md` under *Story Events*.
+
 ### 5. Verifications still owed
 
 All cheap, all need the player at the controls. Ask before running any of
 them -- see Testing with the player.
 
+- ~~Final Battle's event list, through the guide app.~~ **Heard, 12:41 log,
+  all three rows**, fixed on Lord Slug's evidence and never captured itself.
+- **Game Level through the guide app since the mirror was retired.** Cross
+  on any event: expect "Game Level. 00 ..." then "Level 2", and Left and
+  Right to move it. The cursor was verified live by a spoken test, so this
+  is the app's own confirmation that is owed, not the address's.
 - **The Item Shop's picker, through the guide app.** Mapped from
   captures; heard through the reader offline, not yet in play. Cross on an
   affordable item: "How many", "times 1", then the count as the arrows move
   it. Triangle: the list and item again.
-- **Game Level, leave and return.** Press Triangle to go back, re-pick the
-  event, check it still tracks. Every cursor here is held to being tested on a
-  transition it was not derived from; this one has not been. If it goes silent
-  afterwards that is the two mirrors disagreeing, which is the design working.
+- ~~Game Level, leave and return.~~ **Done 2026-09-09, and it failed the way
+  the design predicted**: the static mirror read 0 on a fresh visit while
+  the screen showed 2, so the level was silent. A spoken test then moved the
+  cursor Right and Left and the mirror never followed; it was not a copy, and
+  it is retired. The cursor alone is verified on that live test.
 - ~~The Select Scenario labels, when a third scenario unlocks.~~ **Done, twice
   over.** A third and then a fourth unlocked on 2026-09-07, the game turned out
   to *insert* rather than append, and the cursor the labels were indexed by
@@ -641,15 +686,11 @@ them -- see Testing with the player.
   out to load the same sprite at a different address, so Ultimate Battle Z
   probably does too. One `check` on that screen says where, and one line
   adds it; the Dueling and Tournament entries are the pattern.
-- **The story event list**, inside Dragon Adventure -- the screen between
-  Select Scenario and Game Level, where the player is still choosing blind.
-  Now clearly the highest value of the three: it is both a silent screen and
-  the likeliest home of the current-event index that fixes F12. Almost
-  certainly needs `in_adventure=True`, since the HUD heuristic will call it
-  gameplay too. **Capture it before trusting any marker near it** -- there is
-  no capture of that screen, so whether the Select Scenario or Game Level
-  marker also matches there is unknown, and that is exactly how Select Scenario
-  came to be silent.
+- ~~The story event list~~ **Mapped 2026-09-09**; see *Story Events* under
+  What works today and in `docs/memory-map.md`. The capture confirmed the
+  warning that stood here: Select Scenario's marker does match there, and
+  the mod was naming the wrong screen with total confidence. What is left
+  is the cued walk under item 5.
 - **Dragon Library** -- detected, but cursor and labels both unknown.
 - **Ultimate Battle Z and the rest** -- not detected at all, so each needs a
   marker found before a cursor is worth looking for. These are also the
@@ -950,6 +991,41 @@ one cued scan and no table at all.
   refuses garbage and move-list glyphs without knowing a single word.
 
 ## Recently finished
+
+### 2026-09-09: the story event list speaks, and it took three rounds in play
+
+The screen between Select Scenario and Game Level, silent since the start and
+the last Dragon Adventure menu without a voice. Mapped from one capture taken
+with the player on it, verified on a cued walk of eleven presses, and then
+wrong twice in play before it was right -- each time diagnosed in one step
+from a snapshot taken on the spot with the app closed, which is the method
+this project should keep. Released as 2026.09.09-r1.
+
+- **The screen shares its marker with Select Scenario.** The allocation and
+  the sprite table are the same bytes, so the guide had been saying "Select
+  Scenario" and "Saiyan Saga" over the list. A state byte at `0x00B054B0`
+  reads 0, 1 and 2 across the three Dragon Adventure menus; a screen can now
+  demand a value of it alongside its marker, and the two cannot collide.
+- **The rows are the game's own text.** Each visible row is a numbered pair
+  of text-draw structures, and the highlighted one is painted in a colour no
+  other row uses. The game's row counter must name the same row. The names
+  come out of the game's event table through its own pointers, so nothing
+  was transcribed and nothing is tied to English.
+- **Three things the walk did not show, play did.** The row counter is kept
+  once per scenario, indexed by the scenario list's cursor. Game Level's
+  heading pair stays in the array at full alpha, pushed off the left edge,
+  so positions are read as signed. A two-line event name sits nine pixels
+  from its number, and a two-row list has no odd colour out, so there the
+  counter chooses and the highlight's one-step shift to the left confirms.
+- **Game Level names its event.** "Game Level. 06 Training with King Kai",
+  read from the text drawn at the top of that screen. The 2026-09-07 gap is
+  closed from the other side; no event index was needed.
+- **Game Level's second cursor copy was not one.** It read 0 while the
+  screen showed 2, and a spoken test moved the cursor Right and Left with
+  the copy never following. Retired; the level had been silent on every
+  first visit because of it.
+- **Evidence on disk**: `event_a`, `evt0`-`evt10`, `tree_a`, `slug_a`, with
+  screenshots; 865 offline checks in `test_menus.py`, 23 of them new.
 
 ### 2026-09-08, evening: the Item Shop speaks, from the menu to the picker
 

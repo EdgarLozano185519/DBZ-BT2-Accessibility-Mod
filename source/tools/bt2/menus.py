@@ -196,6 +196,172 @@ class ListView:
         return self.slots[visible]
 
 
+class EventList:
+    """Rows drawn as numbered text, with the highlighted one in a colour.
+
+    The story event list inside Dragon Adventure, measured 2026-09-09 over
+    twelve captures: the game draws through an array of text structures,
+    0x4C apart, starting at the display pointer.  Each visible row is a
+    number and a name, consecutive structures on the same line, and the
+    highlighted row's name is painted in a colour no other row uses --
+    yellow against white in the screenshots.  Each structure carries its
+    position at +4 and its colour at +0x18, and the game hides text by
+    zeroing the colour's alpha or moving it below the bottom of the screen,
+    which is how a stale row and an off-screen line are told from a drawn
+    one.  The shop paints every row alike and marks its highlight with a
+    cursor sprite, which is why it needs a row counter and this does not.
+
+    The structures are scanned rather than fixed, because the game inserts
+    one at the front of the array while it asks which event to start from,
+    and a fixed layout then read a number as a name and named the wrong
+    thing.  A row is a pair the text itself vouches for: digits, then not.
+
+    **Two readings must agree.**  The colour names a row; the game's own row
+    counter, less the window's top row, names a structure; the row is
+    spoken only when they are the same one.  The counter alone was found by
+    fitting eight cued presses, so it is the colour's cross-check and not a
+    replacement for it.  Any other pattern -- two rows apart, all alike, a
+    counter off the window -- is a frame this build has not seen, and it
+    says nothing rather than pick.
+
+    Nothing here is a table of names.  The structures point into the game's
+    own event-name table, so the words are the game's and the reading is not
+    tied to English -- and the number is spoken as the screen writes it.
+    """
+
+    COLOUR = 0x18
+    POSITION = 0x4
+
+    def __init__(self, base, stride, count, row=None, top=None,
+                 per=None, per_stride=4, screen_height=448):
+        self.base = base
+        self.stride = stride
+        self.count = count
+        # The game's own row counter and window top, or None where a single
+        # visible row is the whole reading, as on Game Level's heading.
+        # Both are kept once per scenario, on a four-byte stride, indexed by
+        # the scenario list's own cursor: `per` is that cursor's address.
+        self.row = row
+        self.top = top
+        self.per = per
+        self.per_stride = per_stride
+        self.screen_height = screen_height
+
+    def counters(self, pine) -> tuple[int, int]:
+        """(row, window top) for the scenario whose list is showing."""
+        offset = 0 if self.per is None else self.per_stride * pine.read8(self.per)
+        return pine.read8(self.row + offset), pine.read8(self.top + offset)
+
+    def visible(self, pine, address: int) -> bool:
+        """Is this structure drawn where the player can see it?
+
+        Three ways the game hides text, each seen: alpha zero (stale rows
+        under Game Level), a y below the bottom edge (the parked line), and
+        an x off the left edge -- Game Level's heading pair, still yellow
+        and still at full alpha, sits at x = -412 once the list is back.
+        Positions are signed halfwords.
+        """
+        if pine.read32(address) == 0:
+            return False
+        if (pine.read32(address + self.COLOUR) >> 24) == 0:
+            return False
+        position = pine.read32(address + self.POSITION)
+        x = position & 0xFFFF
+        y = position >> 16
+        if x >= 0x8000 or y >= 0x8000:
+            return False
+        return y < self.screen_height
+
+    def rows(self, pine) -> list[tuple[int, int, str, str]]:
+        """(number structure, name structure, number, name), in order."""
+        from . import story
+        found = []
+        previous = None
+        for index in range(self.count):
+            address = self.base + index * self.stride
+            if not self.visible(pine, address):
+                previous = None
+                continue
+            text = story.displayed(pine, address)[0]
+            line = pine.read32(address + self.POSITION) >> 16
+            if previous is not None and text and not text.isdigit():
+                number_at, number, number_line = previous
+                # A name sits a pixel below its number on most rows, and
+                # nine above it when it wraps onto two lines ("The Terrible
+                # Super Namekian!", Lord Slug). Rows are 48 apart.
+                if abs(number_line - line) <= 16:
+                    found.append((number_at, address, number, text))
+                    previous = None
+                    continue
+            previous = (address, text, line) if text and text.isdigit() else None
+        return found
+
+    def highlighted(self, pine) -> tuple[int, int, str, str] | None:
+        """The highlighted row, or None when the readings do not agree.
+
+        Three or more rows: the one whose name colour no other row shares,
+        while every other row agrees, and the counter must name the same
+        one.  Two rows: the colour can only say that they differ -- either
+        is the odd one out -- so the counter chooses, and the chosen row
+        must also be the one drawn a step to the left, which the highlight
+        always is (x 41 and 75 against 43 and 76 on every capture).  One
+        row: itself, if the counter says 0.
+        """
+        rows = self.rows(pine)
+        if not rows:
+            return None
+        colours = [pine.read32(name + self.COLOUR) for _, name, _, _ in rows]
+        by_colour = None
+        if len(rows) == 1:
+            by_colour = rows[0]
+        elif len(rows) >= 3:
+            odd = [row for row, colour in zip(rows, colours)
+                   if colours.count(colour) == 1]
+            rest = {colour for colour in colours if colours.count(colour) != 1}
+            if len(odd) != 1 or len(rest) != 1:
+                return None
+            by_colour = odd[0]
+        elif colours[0] == colours[1]:
+            return None
+        if self.row is None:
+            return by_colour
+        row, top = self.counters(pine)
+        index = row - top
+        if not 0 <= index < len(rows):
+            return None
+        chosen = rows[index]
+        if by_colour is not None:
+            return chosen if chosen is by_colour else None
+        other = rows[1 - index]
+        left = pine.read32(chosen[1] + self.POSITION) & 0xFFFF
+        right = pine.read32(other[1] + self.POSITION) & 0xFFFF
+        return chosen if left < right else None
+
+    def label(self, pine) -> str | None:
+        """The highlighted row as the screen writes it, number then name."""
+        row = self.highlighted(pine)
+        if row is None:
+            return None
+        _, _, number, name = row
+        return f"{number} {name}"
+
+    def prompt(self, pine) -> str | None:
+        """The first structure's text, when it is on screen.
+
+        On the event list that is a line parked below the screen's bottom
+        edge, and never read.  While the game asks which event to start
+        from -- the state it opens in from Select Scenario -- it is that
+        question, drawn where the synopsis was, and no row is highlighted.
+        """
+        from . import story
+        if not self.visible(pine, self.base):
+            return None
+        return story.displayed(pine, self.base)[0]
+
+    def spoken(self, pine) -> str | None:
+        return self.label(pine) or self.prompt(pine)
+
+
 class QuantityView:
     """A how-many picker: one number the player raises and lowers.
 
@@ -228,7 +394,9 @@ class Screen:
                  marker_outlives_screen=False, count_address=None,
                  unknown_row_with_count=None, id_array=None, id_stride=4,
                  labels_by_id=None, name_pointers=(), list_view=None,
-                 quantity_view=None, state_address=None, variants=()):
+                 quantity_view=None, state_address=None, variants=(),
+                 state_value=None, event_list=None, prose_pointers=(),
+                 heading=None):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -292,8 +460,28 @@ class Screen:
         # -- and the guide's Adventure gate still sees the marker, so world-map
         # guidance cannot resume over a shop dialog it does not know.
         self.state_address = state_address
-        self.state_value = None
+        # A screen may also demand a value there itself, without variants.
+        # The three Dragon Adventure screens share one allocation and one
+        # per-screen sprite table, so their markers cannot tell them apart
+        # on their own; the byte at 0x00B054B0 can, and each of them names
+        # the value it needs. A marker with the wrong value is not a match.
+        self.state_value = state_value
         self.variants = tuple(variants)
+        # A list whose highlight is a colour rather than a counter; see
+        # EventList. The story event list is the one so far.
+        self.event_list = event_list
+        # Where F12 reads on this screen, when the game's display pointer
+        # may aim at something other than the prose the player can see:
+        # text structures, in order of preference, of which the first one
+        # drawn on screen is read. The story event list parks a line below
+        # the bottom edge in the first and draws its synopsis in the second,
+        # except while it is asking which event to start from, when the
+        # question is in the first and on screen.
+        self.prose_pointers = tuple(prose_pointers)
+        # Text the screen draws once at the top and never moves -- Game
+        # Level's event number and name -- said after the screen's name on
+        # arrival. An EventList with no counter; see announcement().
+        self.heading = heading
         for value, variant in self.variants:
             variant.state_address = state_address
             variant.state_value = value
@@ -313,6 +501,16 @@ class Screen:
         # band wide enough to catch every copy could not tell them apart.
         self.search_band = search_band
 
+    def announcement(self, pine) -> str:
+        """What to say on arrival: the screen's name, and its heading if drawn."""
+        if self.heading is None:
+            return self.name
+        try:
+            line = self.heading.label(pine)
+        except Exception:
+            line = None
+        return self.name if line is None else f"{self.name}. {line}"
+
     @property
     def readable(self) -> bool:
         return self.cursor is not None or self.speaks_names
@@ -321,12 +519,14 @@ class Screen:
     def speaks_names(self) -> bool:
         """Does this screen read the game's drawn text rather than a table?"""
         return (bool(self.name_pointers) or self.list_view is not None
-                or self.quantity_view is not None)
+                or self.quantity_view is not None
+                or self.event_list is not None)
 
     @property
     def name_prefixes(self) -> tuple[str | None, ...]:
         prefixes = tuple(prefix for _, prefix in self.name_pointers)
-        if self.list_view is not None or self.quantity_view is not None:
+        if (self.list_view is not None or self.quantity_view is not None
+                or self.event_list is not None):
             return (None,) + prefixes
         return prefixes
 
@@ -347,6 +547,8 @@ class Screen:
             names.append(None if slot is None else story.displayed(pine, slot)[0])
         elif self.quantity_view is not None:
             names.append(self.quantity_view.label(pine))
+        elif self.event_list is not None:
+            names.append(self.event_list.spoken(pine))
         names.extend(story.displayed(pine, address)[0]
                      for address, _ in self.name_pointers)
         return tuple(names)
@@ -574,6 +776,29 @@ SHOP_LIST = ListView(
     category=0x008CD360, row_base=0x008CC330, top_base=0x008CC340, stride=4,
     slots=(0x008C6290, 0x008C62DC, 0x008C6328, 0x008C6374), categories=4)
 
+# The story event list's rows, in the same text-draw structures the shop
+# uses, from the second pair on: the first structure holds a line drawn off
+# the bottom of the screen and the second the synopsis. See EventList and
+# the Story Events entry below.
+EVENT_LIST = EventList(
+    base=0x008C6244, stride=0x4C, count=20,
+    # The row counter and the window's top row, in the Dragon Adventure
+    # block beside the scenario list's cursor: the one address each that
+    # fitted eight cued presses on the Saiyan Saga (rows 1, 2, 1, 2, 3, 4,
+    # 5, 6; tops 0 to 2), and both read 0 on the earlier capture at row 0
+    # they were not fitted to. **They are kept once per scenario**: on Tree
+    # of Might, the second row of the scenario list, the list opened on its
+    # row 01 with 0x00B05378 reading 0 and 0x00B0537C reading 1 -- the
+    # guide was silent on it in play for exactly that reason, 2026-09-09,
+    # `tree_a` -- so the scenario cursor at 0x00B0536C picks the slot.
+    row=0x00B05378, top=0x00B05440, per=0x00B0536C)
+
+# Game Level draws the chosen event's number and name once at the top, in
+# the same array, at whichever index is free: 4 and 5 on one capture, 12
+# and 13 on another. The stale rows beneath keep their text with alpha
+# zero, so the one visible pair is the heading.
+EVENT_HEADING = EventList(base=0x008C6244, stride=0x4C, count=20)
+
 SCREENS = [
     # The main menu is recognised twice over, from two allocations with
     # different lifetimes. 0x00AA15EC sits 0x344 above the cursor, so finding
@@ -772,6 +997,44 @@ SCREENS = [
     Screen("Tournament Character Select", 0x009D8C52,
            b"mc_chara_select_yazurushi_up",
            name_pointers=((0x008C6244, None),)),
+    # The story event list, between Select Scenario and Game Level: the
+    # events of the chosen scenario, five to a window, each numbered, with
+    # the highlighted one's synopsis in a box below. Mapped 2026-09-09 from
+    # one capture, `event_a`, on the first event of the Saiyan Saga.
+    #
+    # It shares Select Scenario's marker and allocation -- 0x00D53440 is the
+    # same bytes on both -- and is told apart by the Dragon Adventure menu
+    # byte at 0x00B054B0, which reads 1 here, 0 on the scenario list and 2 on
+    # Game Level. A second byte, 0x00B052F4, agrees (0x18, 0, 8). Neither
+    # screen can be named without its value, so neither is.
+    #
+    # The game draws the visible rows through the text structures the
+    # shop's lists use and paints the highlighted row's name in a colour the
+    # others do not share; its own row counter at 0x00B05378, less the
+    # window top at 0x00B05440, must name the same row. EventList reads
+    # both. The names come from the game's own event table through those
+    # pointers, so nothing was transcribed. Verified on a cued walk of
+    # eleven presses the same day: eight rows, a scrolled window, Triangle
+    # back to Select Scenario, Cross back in and Cross on to Game Level,
+    # each capture matched against its screenshot.
+    #
+    # Coming back in from Select Scenario the game first asks "Which story
+    # event will you start your adventure from?", with no row highlighted
+    # and the array shifted by one; that question is spoken instead of a
+    # row, and the row once a key moves it.
+    #
+    # The marker outlives its screen exactly as Select Scenario's does -- it
+    # is the same marker -- and is flagged for the same reason.
+    Screen(
+        "Story Events", 0x00D53440, b"mc_da_2_text_off_l",
+        in_adventure=True, marker_outlives_screen=True,
+        state_address=0x00B054B0, state_value=1,
+        event_list=EVENT_LIST,
+        # F12: the question while it is up, else the synopsis box in the
+        # second structure. The display pointer's line sits at y=486 on a
+        # 448-line screen while the list is live, so it is not read then.
+        prose_pointers=(0x008C6244, 0x008C6290),
+    ),
     # The Game Level screen, reached after choosing a story event in Dragon
     # Adventure. Three boxes side by side reading 1, 2, and 3, arranged
     # horizontally, so it answers to Left and Right rather than Up and Down.
@@ -781,9 +1044,14 @@ SCREENS = [
     # "Game Level" and the instruction line calls it the "Match level"; neither
     # says easy, normal or hard, so neither does the mod.
     #
-    # Same two-copy arrangement as Options: a plain count at 0x00B054A8, beside
-    # this screen's own sprite names, and the index times four at 0x00432D71 in
-    # static memory. Both are read and must agree.
+    # One copy of the cursor: a plain count at 0x00B054A8, beside this
+    # screen's own sprite names. **The mirror at 0x00432D71 is retired.** It
+    # was recorded as the index times four, and on 2026-09-09, in a fresh
+    # session, it read 0 while the screen showed 2; a spoken test then moved
+    # the cursor Right and Left -- 1, 2, 1 at 0x00B054A8, each matching the
+    # screen -- and the mirror stayed 0 throughout, as did its three
+    # recorded copies. It was never a copy of this cursor, and reading it
+    # had silenced the level on every first visit. No second copy is known.
     #
     # The marker was 0x00B1007B, which also matches on Select Scenario: that
     # address lives in the block the two screens share byte for byte, so no
@@ -799,9 +1067,19 @@ SCREENS = [
     Screen(
         "Game Level", 0x00D547C0, b"mc_da_5_lv_csr", 0x00B054A8, 1,
         {0: "Level 1", 1: "Level 2", 2: "Level 3"},
-        {0: 0x00D179C2, 1: 0x00D179C2, 2: 0x00D179C2},
-        mirror=0x00432D71, mirror_stride=4,
+        # No recorded subtitle: F12 read the instruction line from a fixed
+        # address, and on 2026-09-09 the screen showed Goku's "Got it? The
+        # next one's the last one!" there instead. The display pointer says
+        # which, so F12 reads through it here like everywhere else.
+        None,
         in_adventure=True,
+        # The chosen event's number and name, drawn at the top of the
+        # screen and said once after the screen's name -- "Game Level. 06
+        # Training with King Kai". Read from the game's text, on two
+        # captures from different sessions and different events, at
+        # different indices of the array each time. This is the event name
+        # F12 used to get wrong, now read from where the screen draws it.
+        heading=EVENT_HEADING,
         # Not observed stale itself, but it is an entry in the same per-screen
         # table as Select Scenario's, written on the way into Dragon Adventure
         # and demonstrably not cleared on the way out. Flagged by that shared
@@ -834,6 +1112,14 @@ SCREENS = [
     Screen(
         "Select Scenario", 0x00D53440, b"mc_da_2_text_off_l", 0x00B0536C, 1,
         in_adventure=True,
+        # **The story event list has the same marker**, because it draws
+        # from the same allocation and the same sprite table, so this entry
+        # also demands the Dragon Adventure menu byte at 0x00B054B0: 0 here,
+        # on all thirteen captures of this list across four sessions; 1 on
+        # the event list; 2 on Game Level. Measured 2026-09-09, and it is
+        # what stops this screen being named over the event list, where the
+        # cursor below would have said "Saiyan Saga" with total confidence.
+        state_address=0x00B054B0, state_value=0,
         # **The cursor moved here on 2026-09-07, and the old one is refuted.**
         # A third scenario unlocked and the screen went silent. Read live at
         # all three rows, each paired with a screenshot:
@@ -1056,8 +1342,7 @@ class MenuReader:
         trusted, so the marker decides.
 
         Costs a short read per frame, and only for screens flagged as living
-        inside Adventure -- two, at present: the Game Level chooser and the
-        Select Scenario list.
+        inside Adventure: the three Dragon Adventure menus and the Item Shop.
         """
         for screen in SCREENS:
             if not screen.in_adventure:
@@ -1084,6 +1369,8 @@ class MenuReader:
 
     def _match(self, pine, screen) -> tuple[bool, bool]:
         """(is this screen up, does the evidence locate its cursor)."""
+        if screen.state_value is not None and screen.state(pine) != screen.state_value:
+            return False, False
         shift = self._shifts.get(screen.name, 0)
         if screen.primary.present(pine, shift):
             return True, True
@@ -1218,7 +1505,7 @@ class MenuReader:
             if found is not None:
                 self._unknown_since = None
                 self._announced_unknown = False
-                self.speaker.say(found.name)
+                self.speaker.say(found.announcement(pine))
             else:
                 # Every screen change passes through a moment where the old
                 # screen has unloaded and the new one has not arrived. Saying
@@ -1461,8 +1748,18 @@ class MenuReader:
         return line
 
     def _displayed_prose(self, pine) -> str | None:
-        from .story import read_displayed
+        from .story import displayed, read_displayed
         try:
+            if self.screen is not None and self.screen.prose_pointers:
+                # The screen says where its visible prose is drawn. No
+                # fallback to the display pointer: on the story event list
+                # that can aim at a line parked below the bottom of the
+                # screen, and F12 says what is on screen or that it found
+                # nothing.
+                for address in self.screen.prose_pointers:
+                    if EVENT_LIST.visible(pine, address):
+                        return displayed(pine, address)[0]
+                return None
             return read_displayed(pine)
         except Exception:
             return None

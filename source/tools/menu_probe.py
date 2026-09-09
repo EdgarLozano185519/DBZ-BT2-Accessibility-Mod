@@ -972,6 +972,14 @@ def check() -> int:
                 except Exception:
                     pass
             note += "  (flagged as inside Adventure)" if screen.in_adventure else ""
+            if screen.state_value is not None:
+                try:
+                    have = screen.state(client)
+                    note += (f"  state 0x{have:02x} at 0x{screen.state_address:08X}"
+                             + (" agrees" if have == screen.state_value
+                                else f" wants 0x{screen.state_value:02x}: NOT this screen"))
+                except Exception as error:
+                    note += f"  state unreadable: {error}"
             second = "" if screen.alternate is None else f"   second signature {far}"
             print(f"  {screen.name:<16} {near}{second}{note}")
         print("  A screen matched only by its second signature is up, but its")

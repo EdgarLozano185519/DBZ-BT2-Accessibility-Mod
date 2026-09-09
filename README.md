@@ -83,8 +83,14 @@ automatically. **NVDA is not bundled** — install it yourself if you want it.
 - **Select Scenario**, the Dragon Adventure scenario list — Saiyan Saga, Tree
   of Might, Lord Slug, Final Battle and Fateful Brothers, chosen with Up and
   Down
+- **Story Events**, the list of a scenario's events between Select Scenario
+  and Game Level — each event as the screen writes it, "00 Mysterious Alien
+  Warrior", read from the game's own text, including when the list scrolls;
+  F12 reads the scenario's synopsis. New on 2026-09-09 and heard in play on
+  five scenarios the same day
 - **Game Level**, the difficulty chooser reached after picking a story event in
-  Dragon Adventure — Level 1, 2 or 3, chosen with Left and Right
+  Dragon Adventure — it names the event on arrival, "Game Level. 06 Training
+  with King Kai", then Level 1, 2 or 3, chosen with Left and Right
 - **Character Select** in Dueling — every fighter on the grid, for both
   players. The first move on player 2's side says "Player 2" first, so you
   know which panel is speaking
@@ -290,8 +296,8 @@ indistinguishable from "working, nothing to say":
 - **Battles are not accessible** beyond the game's own audio
 - **The event name is not read on Game Level.** F12 used to announce one, and
   it was the first event's name whatever you had picked — so it has been
-  removed. The instruction line beside it is correct and is still read. Naming
-  the event properly needs the story event list mapped first
+  removed. As of 2026-09-09 the event is named again, correctly, from the
+  text the screen draws at the top, and on the Story Events list before it
 - If the guide cannot find any text, F12 says so rather than reading nonsense
 - Navigation is a playtest of Dragon Adventure, not whole-game accessibility.
   Unfamiliar maps still need wider testing
@@ -320,6 +326,18 @@ relevant log. Review logs before sharing; they can contain your map names and
 local paths. **Do not send game dumps, BIOS files or saves.**
 
 ## About this build
+
+**2026.09.09-r1** adds the story event list inside Dragon Adventure, the screen
+between Select Scenario and Game Level that had been silent, and has Game
+Level name the event it is for. Nothing on either screen was transcribed:
+the rows are read from the text the game draws, with the highlighted one
+picked out by the colour the game paints it and cross-checked against the
+game's own row counter. It took three rounds in play to get right -- a
+counter kept once per scenario, a leftover heading hidden off the left edge
+of the screen, and a two-line event name -- and every scenario tried since
+has read. It also stops the guide saying "Select Scenario" and "Saiyan Saga"
+over the event list, and retires a second copy of Game Level's cursor that
+turned out not to be one and had been silencing the level on a first visit.
 
 **2026.09.08-r5** adds the Item Shop: the Buy/Sell menu, both item lists,
 the how-many picker and the refusal, all heard in play the same night except
