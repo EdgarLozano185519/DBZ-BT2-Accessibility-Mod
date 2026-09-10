@@ -1141,6 +1141,248 @@ confirmed, player 2 at rest), `csel20`-`csel26` (player 2 moving), with the
 `*_cues.txt` beside each scan. The scan tools take `--prefix` as of the same
 day, because their default names were the Select Scenario archive.
 
+## Evolution Z: one marker, a menu, a character row and the Z Item list
+
+**Mapped 2026-09-09, late, from one capture**, `fusion0`, taken with the
+guide app closed while the player sat on the screen. **Not yet heard in
+play.** The player had gone into Evolution Z from the main menu looking for
+the item-fusion menu and reported being "on a list of items"; the screenshot
+shows a row of seven character portraits along the top, one framed in
+yellow, the character's name drawn as text beneath it ("Kid Gohan"), a
+Parameters panel to the right -- Life, Ki, Attack, Defense, Speed, Blast 1,
+Blast 2, Ultimate Blast, under "Parameters Lv. 008" -- and up and down
+arrows either side of the row. Which of Evolution Z's entries this row
+belongs to, customising or fusion, is written nowhere on screen and nowhere
+in RAM (no "Customize", "Fusion" or "Evolution" string is drawn; the only
+"Evolution Z" text is the main menu's own label), so the screen is named
+for what is certain.
+
+- **Marker** -- `mc_chara_select_yazurushi_up` at `0x00A5FF93`: the scroll
+  arrow sprite Dueling loads at `0x009CE8D4` and Dragon Tournament at
+  `0x009D8C52`, here at a third address. Checked across all 136 captures on
+  disk: present on this one only, and neither of the other two addresses
+  matches here, so the three modes cannot be confused for one another. Two
+  more copies sit at `0x00D23138` and `0x00D3F180`, in the per-screen table
+  region, and are not used for the reason the Dueling entry gives. The
+  title's raw signature matches, as it does on every character select, and
+  is refused because text is on screen.
+- **No cursor address.** The first draw slot, `0x008C6244`, aims at "Kid
+  Gohan", the highlighted name, at position (231, 93) -- the panel position
+  player 1's name has on the Dueling screen. The name table it points into
+  is the roster table on a `0x40` stride, at `0x00BF1700` in this mode, and
+  is read through the pointer, never by address. The second slot points at
+  an empty string; the rest hold non-text. One pointer is wired, as on the
+  tournament screen.
+- **One capture, so the pointer following the highlight rests on the
+  Dueling and Tournament precedent**, not on a walk here. The first Left or
+  Right the player makes with the guide running is the test: the name
+  should change with the frame.
+- **Neither gameplay nor Adventure.** The HUD heuristic says not gameplay,
+  so `in_adventure` is not needed.
+- **Says** "Evolution Z" on arrival, then the highlighted name whenever
+  it changes. F12 reads the name. (It said "Evolution Z Character
+  Select" for one build, before the walk below showed the marker holds
+  through the whole mode.)
+- **Unmeasured.** Everything else in the mode: the menu before this row,
+  whatever Cross opens, Up and Down on the row, and whether the marker
+  survives leaving. The sprites loaded beside the marker include seven item
+  plates (`mc_item_plate1`-`7`), `mc_equipment_text`, health and ki point
+  meters and a password font, so the equipment view and the password screen
+  share this allocation and are the screens to capture next. The mode's
+  helper dialogue is resident as text ("Oh! That Z-item is Item Fusion,
+  isn't it!", "You lack the Item Fusion numbers"), so F12 will read
+  whichever box is up.
+
+### The Z Item list, and why the drawing names it
+
+**Mapped the same evening** from `fusion1`, a capture taken while the player
+sat on the list, and a **cued walk of fourteen presses**, `zlist0`-`zlist13`,
+each read off its screenshot: Down seven times from row 1 of the Secret Type
+tab, Up twice, Left to the Fusion type tab and Down there, Right twice to the
+Dragon Ball tab, Triangle out. The player had reported that only some items
+spoke, "items found in the item shop"; the log showed the reason before the
+walk did. The screen draws seven rows through the first seven text
+structures, and the build of that hour read only the first -- the **top
+visible row**, which changes only when the window scrolls. "Health +1" and
+"???" alternating in the log was the window scrolling back and forth.
+
+**What the screen is.** "Z Item list" as artwork at the top, a collection
+percentage as sprite digits, five category tabs -- the shop's four (Ability,
+Support, Fusion, Secret) and a fifth, Dragon Ball -- chosen with Left and
+Right, a yellow plate on the highlighted row, seven rows visible with a
+scrollbar, and "Explanation" on Square, which no press opened. Items the
+player does not own are drawn as "???", from one shared string in the item
+table, and the guide says exactly that.
+
+- **The rows** are the text structures at `0x008C6244` and the six after it,
+  `0x4C` apart, at positions (66, 170), (66, 206) ... (66, 386) -- the same
+  seven positions on all fourteen list captures. They point into the item
+  name table (`0x40` stride, `0x00B80F00` region in this mode: the seven
+  Dragonballs, four Member's Cards, Hercule's Autograph...), read through
+  the pointers, never by address.
+- **Row counter per tab** at `0x00B43A70 + 4 * tab`: the only address in
+  32 MiB that tracked the Secret tab's row through all eleven of its
+  captures (2, 3, 4, 5, 6, 7, 8, 7, 6, 6, 1), and its neighbours held the
+  Fusion tab's 0 then 1 and the Dragon Ball tab's 0 without being asked.
+  The game remembers the row in each tab: back on Secret Type after two
+  tab changes it was still 6, on screen and in memory.
+- **Tab index** at `0x00B43A84`, straight after the five counters (3, 2,
+  3, 4 across the walk); the word after it reads 5 throughout, the tab
+  count, and is not relied on.
+- **Window top per tab** at `0x00B467F4 + 4 * tab`: 0 until the highlight
+  passed the sixth visible row, then 1, then 2, and 2 still after two Ups
+  and two tab changes. One address in the mode's allocation fitted; the
+  other 25 that fitted were flag bytes in the static mirror regions
+  (`0x0043xxxx`, `0x0053xxxx`) that change with everything. The five words
+  after the tops, `0x00B46808 + 4 * tab`, hold the bottom visible row
+  (top + 6) and are not read.
+- **The game's own visible slot** at `0x00B43A8C`: row minus top, kept by
+  the game itself (2, 3, 4, 5, 6, 6, 6, 5, 4, 0, 1, 4, 0 across the walk,
+  49 on the menu). `ListView` now takes it as `slot_address` and speaks
+  only when it agrees with the two counters -- the two-copies rule this
+  project applies to every cursor, in the form this screen offers.
+- **Item count per tab** at `0x00B43AA4 + 4 * tab`: 155, 105, 60, 194
+  and 7 on this save, the only five-word array in 32 MiB that is
+  constant across the fourteen list captures and ends in the Dragon
+  Ball tab's seven. The scrollbar thumb on each screenshot is the size
+  those counts predict (7 of 194 is eleven pixels of a 312-pixel bar,
+  7 of 60 is thirty-six, 7 of 7 fills it). Found after the first build
+  of the list went to play and the player heard nothing on many rows:
+  every unowned item is drawn "???", and a reader that speaks only a
+  *change* of text is silent from one "???" to the next. The row is now
+  said with its place, "???, 3 of 194", and every press is heard.
+- **The tab names are artwork** -- Ability Type, Support Type, Fusion
+  type, Secret Type, Dragon Ball -- and are transcribed, as the main
+  menu's labels are, so Left and Right say where they landed before the
+  row. On arrival the tab and the row are both said.
+- **No state byte.** The marker holds through the menu, the character row
+  and the list, so the list has to be a variant, and the shop's way -- a
+  state byte -- was searched for and not found: 4,621 bytes are constant
+  across the list captures and different on both the menu and the row,
+  none of them in the mode's allocation with a clean small value, and the
+  allocation at `0x00B43A60` is reused wholesale by the character row.
+  What is clean is the drawing: seven structures at seven exact positions,
+  all pointing at something. On the menu the first has moved to King
+  Kai's box at (128, 326) and the other six point at bytes that are not
+  text; on the character row all seven are elsewhere. `DrawnRows` is that
+  test and `Screen.drawn_variants` hangs the list off it; no rows drawn
+  leaves "Evolution Z" up, reading its first slot as before.
+- **The menu after Triangle** (`zlist13`): three entries, Z Item
+  Collection, Z Item List, Item Fusion, artwork, with the highlighted
+  entry's subtitle drawn as text -- "This is a catalog of the Z-items you
+  have." for the list, "You can replace Z-items!" for another, both in the
+  18:06 log as the player moved -- and King Kai's greeting on arrival. The
+  base screen speaks the first slot. **The entries are named from those
+  subtitles**, with no cursor: "This is a catalog of the Z-items you
+  have." was followed by the Z Item list on a Cross in the 18:06 log,
+  "You can create Z-items with Item Fusion." by an item screen on a
+  Cross in the 21:34 one, and "You can replace Z-items!" is the entry
+  left, Z Item Collection. `Screen.text_labels` keys the name on the
+  game's own line, so a drifted read gives the bare line, never a wrong
+  name. The menu's cursor itself is unmapped, one capture only.
+- **Item Fusion** -- see the next subsection.
+
+### The Item Fusion list, and the Explanation box behind Square
+
+**Mapped 2026-09-09, late**, from a cued walk of fourteen presses with the
+player on the screen: Square, Square, Down five times, Up, Right, Down,
+Left, Square, Triangle, Triangle (`ifuse0`-`ifuse13`, contact sheet
+`ifuse_sheet.png`). The 21:34 log had shown the base reader's first slot
+saying "Health +1", "???", "Health +1" here under the name "Evolution Z" --
+the same top-row reading the catalog had before it was mapped.
+
+**What the screen is.** "Z Item Fusion" as artwork, the count of Z Item
+Fusion items owned as sprite digits (005), two empty plates at the top for
+the items to fuse, four category tabs (no Dragon Ball), "Explanation"
+beside Square, four rows visible with a scrollbar, the count owned of each
+item as sprite digits at the right. Cross was not pressed: what it does
+with an item is unmeasured.
+
+- **The rows** are the first four text structures, at (66, 278), (66, 314),
+  (66, 350), (66, 386) on every list capture -- lower than the catalog's,
+  which start at 170, so the two `DrawnRows` cannot match the same frame.
+- **Its own block**, the same shape as the catalog's: tab index at
+  `0x00B43B18` (0 on Ability, 1 on Support, the only address in the mode's
+  allocation that fitted), **row per tab** from `0x00B43B1C` (0 to 5 on
+  Ability through the walk, 4 remembered after the visit to Support; 0 then
+  1 on Support in the next word), **window top per tab** from `0x00B43B2C`
+  (0, 0, 0, 0, 1, 2, 2 on Ability, 2 still after Support; Support's own 0
+  in the next word). The row fitted one address in 32 MiB, the top one.
+- **No visible-slot word and no count.** Nothing tracks row minus top here,
+  and the pair the scrollbars predict for the counts -- about 38 on Ability
+  and 20 on Support -- occurs at a fixed stride in three places, all
+  coincidence: one is a lookup table of small numbers in static memory
+  whose third value is 625, the others read 208 for the last two tabs,
+  more than the catalog's Secret Type holds. So rows are spoken numbered,
+  "???, row 3", from the row counter alone. The words from `0x00B43B80`
+  are the list's item ids and are not read.
+- **The Explanation box.** Square opened it both times, on Health +1 and on
+  Ki +1; Square closed it once and Triangle the other time. Open, the game
+  moves the first text structure to the title bar at (256, 44) with the
+  item's name, draws "<Benefit>", "<Available Location>" and "<Available
+  Character>" through the next three at (54, 86), (54, 206), (54, 288),
+  and the answers -- "Health Level +1", "Battle In Progress", "Unlimited"
+  -- through the three after at (60, 117), (60, 236), (60, 320). Closed,
+  the title goes back to the list and the six stay resident with the
+  answers' alpha zeroed. `ExplanationView` demands the four positions and
+  visible answers, and reads all seven words as the game's: "Health +1.
+  Benefit, Health Level +1. Available Location, Battle In Progress.
+  Available Character, Unlimited." The word at `0x00B43B14` reads 32 while
+  the box is open and 0 otherwise, and is not used: the catalog has the
+  same Square prompt and the drawing test should serve it too, unmeasured.
+- **Says** "Z Item Fusion", the tab, then "Health +1, row 1"; on Square,
+  "Explanation" and the box; on closing it, the list and row again.
+- **Cross on an owned item** (`fuse0`-`fuse8`, a second walk the same
+  night: Cross on Health +1, Down, Down, Up, Cross, Cross, Triangle three
+  times). The game inserts a text structure at the front of the array
+  for the first plate, at (66, 151) with the item's name, and the rows
+  move to the four structures after it at the same positions -- the same
+  trick the story event list plays with its question. The counters stay
+  where they are and go on counting: the list moved to rows 2, 3, 2 under
+  the plate. One copy of the item leaves the row (its count read 002,
+  then 001, then 002 after the Triangle). **Cross on a row the player
+  owns none of changes nothing**, twice over on Health +5, so the second
+  plate and the fusion itself were not reached: the walk's second Cross
+  fell on an unowned row. Triangle empties the plate (a fifth structure
+  is left behind at (66, 386), stale, outside the four the test reads),
+  the next Triangle is the menu, and the third **the main menu, which
+  named itself cleanly** -- Evolution Z's marker does not linger there,
+  and `fuse8` is the capture that shows it. `ZFUSE_ROWS_CHOSEN` is the
+  filled-plate layout, spoken as "Z Item Fusion. First item: Health +1",
+  the tab, the row.
+- **Heard in play the same night**, four logs from 22:01 to 22:25 of the
+  player's own runs: every tab and row of the list, "row 59" on its
+  Fusion type tab and Down wrapping from there to row 1; the Explanation
+  box on Nappa and Zarbon ("New character added! Usable in all modes.
+  Available Location, Versus, World Tournament Ultimate Battle."); the
+  plate, "Z Item Fusion. First item: Health +1", with the list moving
+  under it; and **the failure**, which needs nothing new: a second Cross
+  on an incompatible item drops the guide to the base screen for the
+  moment King Kai's box is up, and the box is his text -- "That
+  combination is no good. It seems you don't quite have the hang of
+  this." "Choose something else." -- then the plate returns and is
+  announced again. The success case has still not been reached.
+- **One thing the logs show that the walk did not**: the tab was
+  sometimes named with no row after it -- "Fusion type" then "Secret
+  Type", and once "Support Type" the same way -- while at other times
+  the same tabs read their row at once. The row is refused when it
+  falls outside the window the top counter describes, so the likeliest
+  cause is the top for a tab not yet visited in that session reading
+  something the row is not within, or the scroll catching up over
+  several frames; the Fusion type tab, which held row 59, was never
+  captured. One `snap` on that tab after a silent arrival would say.
+
+Captures: `ifuse0`-`ifuse13` with `ifuse_cues.txt`; `ifuse0` and `ifuse11`
+are the box, `ifuse13` the menu.
+- **Unmeasured.** The Explanation box behind Square; Item Fusion itself;
+  what Cross does on an item; the tabs' item counts, which would give
+  "3 of 9"; whether the first two tabs scroll the same way (the tops were
+  measured on Secret Type and read 0 on the other two visited).
+
+Captures: `fusion0` (character row), `fusion1` (list), `zlist0`-`zlist12`
+(list), `zlist13` (menu), with `zlist_cues.txt` and a contact sheet
+`zlist_sheet.png` of the fourteen screenshots.
+
 ## Item Shop: one marker, three screens, and lists read as text
 
 **Mapped 2026-09-08**, in three sittings: one capture of the shop's first
@@ -1431,6 +1673,11 @@ screen also needs `in_adventure`.
 - **Dragon Library** -- detected only.
 - **Item Shop** -- mapped, see its own section; its purchase prompt and
   item explanation are the parts not yet seen.
+- **Evolution Z** -- its character row and Z Item list are mapped, see
+  its own section, as are Item Fusion's list and the Explanation box
+  behind Square; its menu is named from its subtitles. Cross on an
+  item in either list, Z Item Collection and the password screen are
+  not mapped.
 - **Ultimate Battle Z** -- not detected at all. The announcer correctly says
   "Unknown screen" there, which is the intended behaviour: naming a screen it
   cannot read would be worse than admitting it.

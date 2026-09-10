@@ -172,13 +172,61 @@ class ListView:
     """
 
     def __init__(self, category, row_base, top_base, stride, slots,
-                 categories):
+                 categories, slot_address=None, count_base=None,
+                 tab_labels=(), numbered=False):
         self.category = category
         self.row_base = row_base
         self.top_base = top_base
         self.stride = stride
         self.slots = tuple(slots)
         self.categories = categories
+        # Where the game keeps the highlighted *visible* slot itself, if
+        # it does. The Z Item list does, beside its tab index; it must
+        # agree with row - top or the frame is not read. The shop keeps
+        # no such word and reads on the two counters alone.
+        self.slot_address = slot_address
+        # How many rows each tab holds, one word per tab, where the game
+        # keeps it. With it the row is spoken as "name, 3 of 194", so two
+        # rows with the same text -- every unowned item is drawn "???" --
+        # are still told apart. Without it the name alone is said.
+        self.count_base = count_base
+        # The tabs' names, where they are artwork and worth saying when
+        # Left or Right changes the tab. Transcribed, as the main menu's
+        # labels are; an index off the end says nothing.
+        self.tab_labels = tuple(tab_labels)
+        # Say "name, row 5" where the game keeps no count this build has
+        # found -- the Item Fusion list -- so rows with the same text are
+        # still told apart.
+        self.numbered = numbered
+
+    def tab_index(self, pine) -> int | None:
+        category = pine.read8(self.category)
+        return category if category < self.categories else None
+
+    def tab(self, pine) -> str | None:
+        index = self.tab_index(pine)
+        if index is None or index >= len(self.tab_labels):
+            return None
+        return self.tab_labels[index]
+
+    def line(self, pine, name: str) -> str | None:
+        """The row as spoken: its name, and its place in the tab if known.
+
+        A row at or past the tab's count is a read this build cannot
+        place, and is not spoken.
+        """
+        if self.count_base is None and not self.numbered:
+            return name
+        category = self.tab_index(pine)
+        if category is None:
+            return None
+        row = pine.read8(self.row_base + self.stride * category)
+        if self.count_base is None:
+            return f"{name}, row {row + 1}"
+        count = pine.read32(self.count_base + self.stride * category)
+        if not row < count:
+            return None
+        return f"{name}, {row + 1} of {count}"
 
     def highlighted_slot(self, pine) -> int | None:
         """The draw structure showing the highlighted row, or None."""
@@ -193,7 +241,54 @@ class ListView:
             # build has not seen; naming a neighbour would be the confident
             # error, so say nothing this frame.
             return None
+        if (self.slot_address is not None
+                and pine.read8(self.slot_address) != visible):
+            return None
         return self.slots[visible]
+
+
+class DrawnRows:
+    """A list is up when the game is drawing its rows where it draws them.
+
+    The Z Item list inside Evolution Z shares its marker with the mode's
+    menu and its character row, and no state byte was found that tells
+    the three apart: 4,621 bytes differ between them and none in the
+    mode's own allocation is clean. What is clean is the drawing. On all
+    fourteen list captures the seven text structures from the display
+    pointer on sit at x 66, y 170 and every 36 below, and point at item
+    names; on the menu the first has moved to the dialogue box and the
+    rest point at bytes that are not text, and on the character row every
+    one is elsewhere. Seven positions reproduced exactly is the same
+    argument a multi-name signature makes.
+    """
+
+    POSITION = 0x4
+
+    def __init__(self, slots, x, first_y, pitch, also=()):
+        self.slots = tuple(slots)
+        self.x = x
+        self.first_y = first_y
+        self.pitch = pitch
+        # Further structures that must sit at a fixed place as well: the
+        # first fusion plate, drawn above the rows once an item is chosen.
+        self.also = tuple(also)
+
+    def drawn(self, pine) -> bool:
+        for slot, x, y in self.also:
+            if pine.read32(slot) == 0:
+                return False
+            position = pine.read32(slot + self.POSITION)
+            if (position & 0xFFFF) != x or (position >> 16) != y:
+                return False
+        for index, slot in enumerate(self.slots):
+            if pine.read32(slot) == 0:
+                return False
+            position = pine.read32(slot + self.POSITION)
+            if (position & 0xFFFF) != self.x:
+                return False
+            if (position >> 16) != self.first_y + index * self.pitch:
+                return False
+        return True
 
 
 class EventList:
@@ -362,6 +457,68 @@ class EventList:
         return self.label(pine) or self.prompt(pine)
 
 
+class TextAt:
+    """One text structure, spoken with a prefix, as a screen's heading."""
+
+    def __init__(self, slot, prefix):
+        self.slot = slot
+        self.prefix = prefix
+
+    def label(self, pine) -> str | None:
+        from . import story
+        text = story.displayed(pine, self.slot)[0]
+        return None if text is None else f"{self.prefix}{text}"
+
+
+class ExplanationView:
+    """The Explanation box behind Square: an item's name and three headed lines.
+
+    Measured 2026-09-09 on the Item Fusion list (`ifuse0`, `ifuse11`): the
+    game moves the first text structure to the box's title bar, draws the
+    three headings -- "<Benefit>", "<Available Location>", "<Available
+    Character>" -- through the next three, and the three answers through
+    the three after that, all at fixed positions.  Closed, the title
+    structure goes back to the list and the answers stay resident with
+    their alpha zeroed, so the box is up when the title is where the box
+    draws it, the headings are where they belong, and the answers are
+    visible.  Square or Triangle closes it.  Every word is the game's.
+    """
+
+    POSITION = 0x4
+    COLOUR = 0x18
+
+    def __init__(self, title, pairs, positions):
+        self.title = title
+        self.pairs = tuple(pairs)
+        self.positions = dict(positions)
+
+    def drawn(self, pine) -> bool:
+        for slot, (x, y) in self.positions.items():
+            if pine.read32(slot) == 0:
+                return False
+            position = pine.read32(slot + self.POSITION)
+            if (position & 0xFFFF) != x or (position >> 16) != y:
+                return False
+        for _, value in self.pairs:
+            if (pine.read32(value + self.COLOUR) >> 24) == 0:
+                return False
+        return True
+
+    def label(self, pine) -> str | None:
+        from . import story
+        title = story.displayed(pine, self.title)[0]
+        if title is None:
+            return None
+        parts = [title]
+        for heading, value in self.pairs:
+            head = story.displayed(pine, heading)[0]
+            text = story.displayed(pine, value)[0]
+            if head is None or text is None:
+                return None
+            parts.append(f"{head.strip('<>')}, {text}")
+        return ". ".join(parts) + "."
+
+
 class QuantityView:
     """A how-many picker: one number the player raises and lowers.
 
@@ -396,7 +553,8 @@ class Screen:
                  labels_by_id=None, name_pointers=(), list_view=None,
                  quantity_view=None, state_address=None, variants=(),
                  state_value=None, event_list=None, prose_pointers=(),
-                 heading=None):
+                 heading=None, drawn_variants=(), text_labels=None,
+                 arrival_slots=1, explanation_view=None):
         self.name = name
         self.marker_address = marker_address
         self.marker = marker
@@ -467,6 +625,22 @@ class Screen:
         # the value it needs. A marker with the wrong value is not a match.
         self.state_value = state_value
         self.variants = tuple(variants)
+        # Variants told apart by the drawing rather than a state byte: a
+        # tuple of (DrawnRows, Screen). The first whose rows are drawn is
+        # the screen; none drawn leaves the base screen up, still
+        # readable, since its own pointer is what the game draws there.
+        self.drawn_variants = tuple(drawn_variants)
+        # Names for entries whose labels are artwork, keyed by the text the
+        # game draws beside them -- the highlighted entry's subtitle on the
+        # Evolution Z menu. No cursor is read: the game's own line picks
+        # the name, and a line not in the table is spoken bare, as before.
+        self.text_labels = text_labels or {}
+        # How many of the spoken slots are said when the screen arrives.
+        # One, ordinarily -- player 1 on the character select. The Z Item
+        # list says its tab and then its row, so two.
+        self.arrival_slots = arrival_slots
+        # The Explanation box, read whole; see ExplanationView.
+        self.explanation_view = explanation_view
         # A list whose highlight is a colour rather than a counter; see
         # EventList. The story event list is the one so far.
         self.event_list = event_list
@@ -520,13 +694,17 @@ class Screen:
         """Does this screen read the game's drawn text rather than a table?"""
         return (bool(self.name_pointers) or self.list_view is not None
                 or self.quantity_view is not None
-                or self.event_list is not None)
+                or self.event_list is not None
+                or self.explanation_view is not None)
 
     @property
     def name_prefixes(self) -> tuple[str | None, ...]:
         prefixes = tuple(prefix for _, prefix in self.name_pointers)
+        if self.list_view is not None and self.list_view.tab_labels:
+            return (None, None) + prefixes
         if (self.list_view is not None or self.quantity_view is not None
-                or self.event_list is not None):
+                or self.event_list is not None
+                or self.explanation_view is not None):
             return (None,) + prefixes
         return prefixes
 
@@ -543,14 +721,22 @@ class Screen:
         from . import story
         names = []
         if self.list_view is not None:
+            if self.list_view.tab_labels:
+                names.append(self.list_view.tab(pine))
             slot = self.list_view.highlighted_slot(pine)
-            names.append(None if slot is None else story.displayed(pine, slot)[0])
+            name = None if slot is None else story.displayed(pine, slot)[0]
+            names.append(None if name is None
+                         else self.list_view.line(pine, name))
         elif self.quantity_view is not None:
             names.append(self.quantity_view.label(pine))
         elif self.event_list is not None:
             names.append(self.event_list.spoken(pine))
-        names.extend(story.displayed(pine, address)[0]
-                     for address, _ in self.name_pointers)
+        elif self.explanation_view is not None:
+            names.append(self.explanation_view.label(pine))
+        for address, _ in self.name_pointers:
+            text = story.displayed(pine, address)[0]
+            label = self.text_labels.get(text)
+            names.append(text if label is None else f"{label}. {text}")
         return tuple(names)
 
     def state(self, pine) -> int | None:
@@ -560,6 +746,12 @@ class Screen:
 
     def resolve(self, pine):
         """The variant the state byte names, the screen itself, or None."""
+        for rows, variant in self.drawn_variants:
+            try:
+                if rows.drawn(pine):
+                    return variant
+            except Exception:
+                return None
         if not self.variants:
             return self
         value = self.state(pine)
@@ -772,6 +964,64 @@ def find_screen_shift(pine, screen) -> int | None:
 
 
 # The Item Shop's lists; see the Item Shop entry below.
+# The Z Item list inside Evolution Z, from the cued walk of 2026-09-09
+# (`zlist0`-`zlist13`, plus `fusion1`): seven visible rows in the first
+# seven text structures, a row counter per tab at 0x00B43A70 with the tab
+# index after the five of them, the window top per tab at 0x00B467F4, and
+# the game's own visible-slot word at 0x00B43A8C, which must agree. The
+# five item counts follow at 0x00B43AA4 (155, 105, 60, 194, 7 on this
+# save), the only five-word array in RAM that is constant across the walk
+# and ends in the Dragon Ball tab's seven, with the scrollbar thumbs to
+# match. Every unowned item is drawn "???", so the row is said with its
+# place: "???, 3 of 194". The tab names are artwork, transcribed.
+ZITEM_LIST = ListView(
+    category=0x00B43A84, row_base=0x00B43A70, top_base=0x00B467F4, stride=4,
+    slots=tuple(0x008C6244 + 0x4C * index for index in range(7)),
+    categories=5, slot_address=0x00B43A8C, count_base=0x00B43AA4,
+    tab_labels=("Ability Type", "Support Type", "Fusion type",
+                "Secret Type", "Dragon Ball"))
+ZITEM_ROWS = DrawnRows(ZITEM_LIST.slots, x=66, first_y=170, pitch=36)
+
+# The Item Fusion list, from the cued walk of 2026-09-09 (`ifuse0`-
+# `ifuse13`): four visible rows in the first four text structures, the
+# same block shape as the catalog's in a block of its own -- tab index at
+# 0x00B43B18, a row per tab from 0x00B43B1C, a window top per tab from
+# 0x00B43B2C, four tabs. No per-tab count was found (the pair 38, 20 the
+# scrollbars predict occurs only inside unrelated tables), so rows are
+# numbered. The word at 0x00B43B14 reads 32 while the Explanation box is
+# open and 0 otherwise; the box is recognised by its drawing instead, so
+# the same reader serves the catalog, where that word was never seen.
+ZFUSE_LIST = ListView(
+    category=0x00B43B18, row_base=0x00B43B1C, top_base=0x00B43B2C, stride=4,
+    slots=tuple(0x008C6244 + 0x4C * index for index in range(4)),
+    categories=4, numbered=True,
+    tab_labels=("Ability Type", "Support Type", "Fusion type",
+                "Secret Type"))
+ZFUSE_ROWS = DrawnRows(ZFUSE_LIST.slots, x=66, first_y=278, pitch=36)
+
+# After Cross on an owned item (`fuse0`-`fuse6`, 2026-09-09, late): the
+# game inserts a structure at the front for the first plate, at (66, 151)
+# with the item's name, and the four rows move to the four structures
+# after it, same positions. The counters do not move. One copy of the
+# item leaves the row's count for the plate; Triangle gives it back.
+# Cross on a row the player owns none of changes nothing, twice over.
+# The second plate has not been seen: no second owned item was chosen.
+ZFUSE_LIST_CHOSEN = ListView(
+    category=0x00B43B18, row_base=0x00B43B1C, top_base=0x00B43B2C, stride=4,
+    slots=tuple(0x008C6244 + 0x4C * index for index in range(1, 5)),
+    categories=4, numbered=True, tab_labels=ZFUSE_LIST.tab_labels)
+ZFUSE_ROWS_CHOSEN = DrawnRows(ZFUSE_LIST_CHOSEN.slots, x=66, first_y=278,
+                              pitch=36, also=((0x008C6244, 66, 151),))
+ZFUSE_PLATE = TextAt(0x008C6244, "First item: ")
+
+# The Explanation box behind Square, measured on the Item Fusion list.
+_SLOT = [0x008C6244 + 0x4C * index for index in range(7)]
+EXPLANATION = ExplanationView(
+    title=_SLOT[0],
+    pairs=((_SLOT[1], _SLOT[4]), (_SLOT[2], _SLOT[5]), (_SLOT[3], _SLOT[6])),
+    positions={_SLOT[0]: (256, 44), _SLOT[1]: (54, 86),
+               _SLOT[2]: (54, 206), _SLOT[3]: (54, 288)})
+
 SHOP_LIST = ListView(
     category=0x008CD360, row_base=0x008CC330, top_base=0x008CC340, stride=4,
     slots=(0x008C6290, 0x008C62DC, 0x008C6328, 0x008C6374), categories=4)
@@ -997,6 +1247,48 @@ SCREENS = [
     Screen("Tournament Character Select", 0x009D8C52,
            b"mc_chara_select_yazurushi_up",
            name_pointers=((0x008C6244, None),)),
+    # Evolution Z, added 2026-09-09: the same arrow sprite the two
+    # character selects use, at a third address -- checked against every
+    # capture on disk, present in this mode only, and neither of the other
+    # two addresses matches here. The marker holds through the whole mode:
+    # its three-entry menu (Z Item Collection, Z Item List, Item Fusion,
+    # artwork all, with King Kai's line and the highlighted entry's
+    # subtitle as text), a character row with the highlighted name drawn
+    # beneath seven portraits, and the Z Item list. The base screen reads
+    # the first draw slot, which is the character's name on the row and
+    # the subtitle on the menu -- what the game draws there. The list is
+    # a variant told apart by its drawing; see DrawnRows. Heard in play
+    # the same day on the row and the menu; the list is from the walk.
+    #
+    # The menu's entries are named from their subtitles, which are the
+    # game's text: "This is a catalog..." was followed by the Z Item list
+    # in the 18:06 log and "You can create Z-items with Item Fusion." by
+    # an item screen in the 21:34 one, each on a Cross; the third is the
+    # remaining entry. A subtitle not in the table is spoken bare.
+    Screen("Evolution Z", 0x00A5FF93, b"mc_chara_select_yazurushi_up",
+           name_pointers=((0x008C6244, None),),
+           text_labels={
+               "You can replace Z-items!": "Z Item Collection",
+               "This is a catalog of the Z-items you have.": "Z Item List",
+               "You can create Z-items with Item Fusion.": "Item Fusion"},
+           drawn_variants=(
+               (EXPLANATION, Screen(
+                   "Explanation", 0x00A5FF93,
+                   b"mc_chara_select_yazurushi_up",
+                   explanation_view=EXPLANATION)),
+               (ZITEM_ROWS, Screen(
+                   "Z Item List", 0x00A5FF93,
+                   b"mc_chara_select_yazurushi_up",
+                   list_view=ZITEM_LIST, arrival_slots=2)),
+               (ZFUSE_ROWS, Screen(
+                   "Z Item Fusion", 0x00A5FF93,
+                   b"mc_chara_select_yazurushi_up",
+                   list_view=ZFUSE_LIST, arrival_slots=2)),
+               (ZFUSE_ROWS_CHOSEN, Screen(
+                   "Z Item Fusion", 0x00A5FF93,
+                   b"mc_chara_select_yazurushi_up",
+                   list_view=ZFUSE_LIST_CHOSEN, arrival_slots=2,
+                   heading=ZFUSE_PLATE)))),
     # The story event list, between Select Scenario and Game Level: the
     # events of the chosen scenario, five to a window, each numbered, with
     # the highlighted one's synopsis in a box below. Mapped 2026-09-09 from
@@ -1386,7 +1678,7 @@ class MenuReader:
     def _detect(self, pine) -> tuple[Screen | None, bool]:
         """Identify the screen, then the variant of it that is up, if any."""
         screen, trusted = self._detect_base(pine)
-        if screen is None or not screen.variants:
+        if screen is None or not (screen.variants or screen.drawn_variants):
             return screen, trusted
         variant = screen.resolve(pine)
         if variant is None:
@@ -1602,11 +1894,11 @@ class MenuReader:
         previous = self._settled
         self._settled = names
         if previous is None:
-            first = names[0]
-            if first is not None and first != self._spoken:
-                self._spoken = first
-                self._last_slot = 0
-                self.speaker.say(first)
+            for slot, name in enumerate(names[:self.screen.arrival_slots]):
+                if name is not None and name != self._spoken:
+                    self._spoken = name
+                    self._last_slot = slot
+                    self.speaker.say(name)
             return
         for slot, (name, prefix) in enumerate(
                 zip(names, self.screen.name_prefixes)):

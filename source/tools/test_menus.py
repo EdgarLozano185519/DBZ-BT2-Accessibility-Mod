@@ -62,6 +62,14 @@ CAPTURES = {
     "csel25": "Character Select",
     "csel26": "Character Select",
     "tourn0": "Tournament Character Select",
+    # Evolution Z's character row, one capture, the player sitting on it;
+    # then its Z Item list and, after Triangle, its menu.
+    "fusion0": "Evolution Z",
+    "zlist13": "Evolution Z",
+    "ifuse13": "Evolution Z",
+    "fuse7": "Evolution Z",
+    # Triangle out of Evolution Z: the main menu, its own marker only.
+    "fuse8": "Main Menu",
     # The Item Shop's Buy/Sell menu, reached from the main menu after a
     # Dragon Adventure session: the Select Scenario marker is still resident.
     "ishop0": "Item Shop",
@@ -142,7 +150,8 @@ SHOP = {
 }
 CAPTURES.update({name: screen for name, (screen, _) in SHOP.items()})
 VARIANT_OF = {"Buy Z Item": "Item Shop", "Sell Z Item": "Item Shop",
-              "How many": "Item Shop"}
+              "How many": "Item Shop", "Z Item List": "Evolution Z",
+              "Z Item Fusion": "Evolution Z", "Explanation": "Evolution Z"}
 
 # The prose on screen in each capture, read off the same screenshots. F12 must
 # reach these whether or not the screen has a recorded subtitle table.
@@ -172,6 +181,12 @@ PROSE = {
     "tree_a": ("The Saiyan Turles attacks Earth! "
                "The Z Fighters and Goku fight back!"),
     "slug_a": "The evil Namek Slug appears! Can Goku protect the Earth?",
+    # Evolution Z's character row: the highlighted name, like Dueling's.
+    "fusion0": "Kid Gohan",
+    # The Explanation box: F12 gets its title, the item's name.
+    "ifuse0": "Health +1",
+    # Evolution Z's menu: King Kai's greeting, as the log heard it.
+    "zlist13": "Ooh, so it's you? Now then, you're gathering Z-items aren't you?",
     "cut0": "I guess your little pet monsters weren't as strong as you thought.",
 }
 
@@ -1179,6 +1194,78 @@ def test_player_two() -> None:
 # The Dragon Tournament entry screen, one visit: Yamcha highlighted, and the
 # second draw slot holding a menu line that must not be spoken as a player.
 TOURNAMENT = {"tourn0": "Yamcha"}
+EVOLUTION = {"fusion0": "Kid Gohan"}
+
+# The Z Item list, from the cued walk of 2026-09-09: the highlighted row
+# read off each screenshot. Down seven times from row 1 of the Secret
+# Type tab, the window scrolling on the sixth and seventh; Up twice;
+# Left to the Fusion type tab and Down there; Right twice, through Secret
+# Type (which remembered row 6) to the Dragon Ball tab. Unowned items are
+# drawn as "???" and that is what is said.
+# The counts (194 Secret, 60 Fusion, 7 Dragon Ball) are the game's words at
+# 0x00B43AA4; the scrollbar thumb on each screenshot is the right size for
+# them. Each row is the highlighted row number read off its screenshot.
+ZLIST = {
+    "fusion1": ("Secret Type", "???, 2 of 194"),
+    "zlist0": ("Secret Type", "???, 3 of 194"),
+    "zlist1": ("Secret Type", "???, 4 of 194"),
+    "zlist2": ("Secret Type", "Hercule's Autograph, 5 of 194"),
+    "zlist3": ("Secret Type", "???, 6 of 194"),
+    "zlist4": ("Secret Type", "???, 7 of 194"),
+    "zlist5": ("Secret Type", "???, 8 of 194"),
+    "zlist6": ("Secret Type", "???, 9 of 194"),
+    "zlist7": ("Secret Type", "???, 8 of 194"),
+    "zlist8": ("Secret Type", "???, 7 of 194"),
+    "zlist9": ("Fusion type", "Z Item Fusion, 1 of 60"),
+    "zlist10": ("Fusion type", "???, 2 of 60"),
+    "zlist11": ("Secret Type", "???, 7 of 194"),
+    "zlist12": ("Dragon Ball", "???, 1 of 7"),
+}
+CAPTURES.update({name: "Z Item List" for name in ZLIST})
+
+# The Item Fusion list, from the walk of the same evening: Square, Square,
+# Down five times, Up, Right, Down, Left, Square, Triangle, Triangle. Rows
+# read off the screenshots; the window scrolled on the fourth and fifth
+# Down. No count is known, so rows are numbered.
+ZFUSE = {
+    "ifuse1": ("Ability Type", "Health +1, row 1"),
+    "ifuse2": ("Ability Type", "Health +5, row 2"),
+    "ifuse3": ("Ability Type", "???, row 3"),
+    "ifuse4": ("Ability Type", "???, row 4"),
+    "ifuse5": ("Ability Type", "Ki +1, row 5"),
+    "ifuse6": ("Ability Type", "???, row 6"),
+    "ifuse7": ("Ability Type", "Ki +1, row 5"),
+    "ifuse8": ("Support Type", "???, row 1"),
+    "ifuse9": ("Support Type", "???, row 2"),
+    "ifuse10": ("Ability Type", "Ki +1, row 5"),
+    "ifuse12": ("Ability Type", "Ki +1, row 5"),
+}
+CAPTURES.update({name: "Z Item Fusion" for name in ZFUSE})
+
+# The Explanation box, opened with Square on two rows.
+EXPLAINED = {
+    "ifuse0": ("Health +1. Benefit, Health Level +1. "
+               "Available Location, Battle In Progress. "
+               "Available Character, Unlimited."),
+    "ifuse11": ("Ki +1. Benefit, Ki Level + 1. "
+                "Available Location, Battle In Progress. "
+                "Available Character, Unlimited."),
+}
+CAPTURES.update({name: "Explanation" for name in EXPLAINED})
+
+# Cross on Health +1, then Down, Down, Up, Cross and Cross on Health +5
+# (owned: none, refused), then Triangle. The first plate holds Health +1
+# until the Triangle empties it.
+CHOSEN = {
+    "fuse0": "Health +1, row 1",
+    "fuse1": "Health +5, row 2",
+    "fuse2": "???, row 3",
+    "fuse3": "Health +5, row 2",
+    "fuse4": "Health +5, row 2",
+    "fuse5": "Health +5, row 2",
+}
+CAPTURES.update({name: "Z Item Fusion" for name in CHOSEN})
+CAPTURES["fuse6"] = "Z Item Fusion"
 
 
 def test_character_select_names() -> None:
@@ -1187,6 +1274,7 @@ def test_character_select_names() -> None:
     expected = [(n, "Character Select", w) for n, w in CHARACTERS.items()]
     expected += [(n, "Tournament Character Select", w)
                  for n, w in TOURNAMENT.items()]
+    expected += [(n, "Evolution Z", w) for n, w in EVOLUTION.items()]
     for name, screen_name, want in expected:
         pine = load(name)
         if pine is None:
@@ -1203,6 +1291,169 @@ def test_character_select_names() -> None:
         told.poll(pine)
         check(f"{name}: the story reader stays quiet", told.speaker.said == [],
               f"said {told.speaker.said}")
+
+
+def test_z_item_list() -> None:
+    """The Z Item list speaks the highlighted row, and only when sure."""
+    print("\nZ Item List:")
+    for name, (tab, want) in ZLIST.items():
+        pine = load(name)
+        if pine is None:
+            check(f"{name} present", False, "capture missing")
+            continue
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        said = menu.speaker.said
+        check(f"{name} says {want!r}", said == ["Z Item List", tab, want],
+              f"said {said}")
+        told = story.StoryReader(Recorder())
+        told.poll(pine)
+        told.poll(pine)
+        check(f"{name}: the story reader stays quiet", told.speaker.said == [],
+              f"said {told.speaker.said}")
+
+    # Down the list: each row spoken once as it changes, the scroll not.
+    steps = [load(f"zlist{n}") for n in (1, 2, 3, 4, 5)]
+    if all(steps):
+        menu = reader()
+        for index, pine in enumerate(steps):
+            for tick in range(4):
+                menu.poll(pine, index + tick * 0.1)
+        check("every row is spoken as the highlight moves, '???' included",
+              menu.speaker.said == ["Z Item List", "Secret Type",
+                                    "???, 4 of 194",
+                                    "Hercule's Autograph, 5 of 194",
+                                    "???, 6 of 194", "???, 7 of 194",
+                                    "???, 8 of 194"],
+              f"said {menu.speaker.said}")
+
+    # Left to another tab: the tab is named, then its remembered row.
+    before, after = load("zlist8"), load("zlist9")
+    if before and after:
+        menu = reader()
+        for tick in range(4):
+            menu.poll(before, tick * 0.1)
+        for tick in range(4):
+            menu.poll(after, 1 + tick * 0.1)
+        check("a tab change names the tab and then the row",
+              menu.speaker.said[2:] == ["???, 7 of 194", "Fusion type",
+                                        "Z Item Fusion, 1 of 60"],
+              f"said {menu.speaker.said}")
+
+    # The menu's entries are named from the subtitle the game draws for
+    # them. The capture holds King Kai's greeting; the list's subtitle is
+    # written over it.
+    menu_up = load("zlist13")
+    if menu_up:
+        target = menu_up.read32(0x008C6244)
+        line = "This is a catalog of the Z-items you have."
+        blob = b"\xff\xfe" + line.encode("utf-16-le") + b"\x00\x00"
+        subtitled = PatchedPine(menu_up, {target: blob})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(subtitled, tick * 0.1)
+        check("a menu entry is named from its subtitle",
+              menu.speaker.said == ["Evolution Z", f"Z Item List. {line}"],
+              f"said {menu.speaker.said}")
+
+    # Triangle: the list gives way to the menu, and the menu's own text.
+    listed, menu_up = load("zlist12"), load("zlist13")
+    if listed and menu_up:
+        menu = reader()
+        for tick in range(4):
+            menu.poll(listed, tick * 0.1)
+        for tick in range(4):
+            menu.poll(menu_up, 1 + tick * 0.1)
+        check("list, then menu, is spoken as such",
+              menu.speaker.said == ["Z Item List", "Dragon Ball", "???, 1 of 7",
+                                    "Evolution Z", PROSE["zlist13"]],
+              f"said {menu.speaker.said}")
+
+    # The game's own visible-slot word must agree with row - top; a frame
+    # where it does not is not read.
+    pine = load("zlist2")
+    if pine:
+        drifted = PatchedPine(pine, {menus.ZITEM_LIST.slot_address: b"\x03"})
+        menu = reader()
+        for tick in range(4):
+            menu.poll(drifted, tick * 0.1)
+        check("a disagreeing visible-slot word silences the row",
+              menu.speaker.said == ["Z Item List", "Secret Type"],
+              f"said {menu.speaker.said}")
+
+
+def test_item_fusion() -> None:
+    """The Item Fusion list numbers its rows; Square reads the whole box."""
+    print("\nItem Fusion:")
+    for name, (tab, want) in ZFUSE.items():
+        pine = load(name)
+        if pine is None:
+            check(f"{name} present", False, "capture missing")
+            continue
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        said = menu.speaker.said
+        check(f"{name} says {want!r}", said == ["Z Item Fusion", tab, want],
+              f"said {said}")
+    for name, want in EXPLAINED.items():
+        pine = load(name)
+        if pine is None:
+            check(f"{name} present", False, "capture missing")
+            continue
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        said = menu.speaker.said
+        check(f"{name} explains {want[:20]!r}...", said == ["Explanation", want],
+              f"said {said}")
+        told = story.StoryReader(Recorder())
+        told.poll(pine)
+        told.poll(pine)
+        check(f"{name}: the story reader stays quiet", told.speaker.said == [],
+              f"said {told.speaker.said}")
+
+    # Cross on an owned item: the plate is announced with the item, and the
+    # list goes on speaking beneath it.
+    plate = "Z Item Fusion. First item: Health +1"
+    for name, want in CHOSEN.items():
+        pine = load(name)
+        if pine is None:
+            check(f"{name} present", False, "capture missing")
+            continue
+        menu = reader()
+        for tick in range(4):
+            menu.poll(pine, tick * 0.1)
+        said = menu.speaker.said
+        check(f"{name} says {want!r} under the plate",
+              said == [plate, "Ability Type", want], f"said {said}")
+    steps = [load(f"fuse{n}") for n in (0, 1, 2, 3, 6)]
+    if all(steps):
+        menu = reader()
+        for index, pine in enumerate(steps):
+            for tick in range(4):
+                menu.poll(pine, index + tick * 0.1)
+        check("the list moves under the plate, and Triangle empties it",
+              menu.speaker.said == [plate, "Ability Type", "Health +1, row 1",
+                                    "Health +5, row 2", "???, row 3",
+                                    "Health +5, row 2", "Z Item Fusion",
+                                    "Ability Type", "Health +5, row 2"],
+              f"said {menu.speaker.said}")
+
+    # Square on a row, Triangle back: the box is read, then the row again.
+    steps = [load(f"ifuse{n}") for n in (10, 11, 12)]
+    if all(steps):
+        menu = reader()
+        for index, pine in enumerate(steps):
+            for tick in range(4):
+                menu.poll(pine, index + tick * 0.1)
+        check("Square opens the box and Triangle returns to the row",
+              menu.speaker.said == ["Z Item Fusion", "Ability Type",
+                                    "Ki +1, row 5", "Explanation",
+                                    EXPLAINED["ifuse11"], "Z Item Fusion",
+                                    "Ability Type", "Ki +1, row 5"],
+              f"said {menu.speaker.said}")
 
 
 def test_item_shop() -> None:
@@ -1379,6 +1630,8 @@ def main() -> int:
     test_character_select_names()
     test_player_two()
     test_item_shop()
+    test_z_item_list()
+    test_item_fusion()
     test_story_events()
     test_the_weak_marker_needs_a_silent_screen()
     test_a_moved_block()

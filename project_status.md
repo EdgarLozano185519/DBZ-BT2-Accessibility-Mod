@@ -4,7 +4,7 @@ Screen reader support for Dragon Ball Z: Budokai Tenkaichi 2, played in PCSX2.
 Read this first when resuming. Details of every address live in
 `docs/memory-map.md`.
 
-Last updated: 2026-09-09, released as 2026.09.09-r1.
+Last updated: 2026-09-09, late, released as 2026.09.09-r2.
 
 ## What works today
 
@@ -102,6 +102,44 @@ Menus speak through NVDA, driven by the game's own memory:
   That closes the F12 event-name gap of 2026-09-07 from the other side. The
   same day its second cursor copy was found not to be one -- see item 5 --
   and retired, so the level speaks on a first visit again.
+- **Evolution Z** -- mapped 2026-09-09 evening, in two sittings. One
+  marker, the character selects' arrow sprite at a third address that no
+  other capture holds, covers the whole mode: its three-entry menu (Z
+  Item Collection, Z Item List, Item Fusion), a character row, and the
+  **Z Item list**. The base screen says "Evolution Z" and reads the first
+  draw slot, which is the character's name on the row and the
+  highlighted entry's subtitle on the menu. **Heard in play the same
+  day**: the 18:06 log has forty-odd character names and the menu's
+  subtitles. The list is a variant told apart by its drawing, seven rows
+  at seven fixed positions, since no state byte exists; it speaks the
+  highlighted item from the game's own text through a per-tab row
+  counter, a per-tab window top, and the game's own visible-slot word,
+  all three of which must agree, as "Secret Type" then "???, 3 of 194"
+  -- the place from the game's own per-tab counts, because every unowned
+  item is drawn "???" and the first build, heard in play at 21:34, was
+  silent from one to the next. Mapped from a cued walk of fourteen
+  presses across three of the five tabs. The menu's three entries are
+  named from their subtitles, "Z Item List. This is a catalog of the
+  Z-items you have.", with no cursor. Before all this the guide read
+  only the top visible row, so an item spoke only when the window
+  scrolled. **Item Fusion** followed the same evening from a second walk:
+  its own four-row list, numbered "Health +1, row 1" because the game
+  keeps no count this build could find, and **the Explanation box behind
+  Square**, read whole from the game's text -- "Health +1. Benefit,
+  Health Level +1. Available Location, Battle In Progress. Available
+  Character, Unlimited." -- asked for by the player and mapped in the
+  same run. Cross on an owned item fills the first plate, announced as
+  "Z Item Fusion. First item: Health +1" with the list still speaking
+  beneath; Cross on an unowned item is refused silently by the game.
+  **All of it heard in play the same night** in the player's own runs,
+  including the failure -- an incompatible second item brings King Kai's
+  "That combination is no good", read as his text with nothing added --
+  and the Explanation box on Secret Type characters. The success case,
+  the second plate and whatever follows, has not been reached and is
+  the one piece left; see item 6. The walk's last Triangle also gave
+  **the main menu after Evolution Z, named cleanly** (`fuse8`). One
+  gap seen in the logs: a tab occasionally named with no row after it;
+  see item 5.
 - **C teaches this map's scale by teleporting, so T can reach the story
   marker.** Added and **confirmed in play 2026-09-07**, twice on the Blue
   landmass map, after which T reached the story objective. Six short commanded
@@ -422,9 +460,10 @@ above has incidentally made this much stricter: a stale pointer left aiming at
 menu text after a scene ends is now refused by address as well as by content.
 The remaining exposure is a stale pointer still inside the scene buffer.
 
-**4. ~~Should this be stamped as a release?~~** Done three times: 2026.09.08-r1,
-2026.09.08-r5 with the whole Item Shop at the end of that day, and
-2026.09.09-r1 with the story event list, each tagged
+**4. ~~Should this be stamped as a release?~~** Done four times: 2026.09.08-r1,
+2026.09.08-r5 with the whole Item Shop at the end of that day,
+2026.09.09-r1 with the story event list, and 2026.09.09-r2 with all of
+Evolution Z that an evening reached, each tagged
 and committed at the player's request; r3 and r4 in between were never
 handed out and their zips are gone. The r1 note follows: at the
 player's request, with a release zip built beside it. The spoken version in
@@ -444,7 +483,7 @@ earned their place. The cutscene duplicates are the ones to drop first.
 player 2026-09-07. It would not have helped the scenario list -- that was an
 identity problem, and memory answered it -- and the Item Shop has since come
 off the list without it: its labels were artwork, but its item names were the
-game's own text. The unmapped menus (Data Center, Ultimate Battle Z, Evolution Z, the story event list) are silent
+game's own text. The unmapped menus (Data Center, Ultimate Battle Z, the rest of Evolution Z) are silent
 precisely because their labels are artwork. Notes on engines, costs and the
 risk of confident misreadings are under *Reading labels that are artwork*
 below. Nothing is installed, and no OCR has been attempted yet.
@@ -638,6 +677,23 @@ them -- see Testing with the player.
   turned out never to have been an index. All of it is settled and the names
   now hang off the game's own scenario numbers. See item 1 and the two
   scenario entries under Recently finished.
+- **The Z Item list with places, through the guide app.** The first
+  build was heard at 21:34 and went silent between "???" rows. Expect
+  now: "Z Item List", the tab, then "???, 2 of 194"; a new line on every
+  Up and Down; the tab then its row on Left and Right. On the menu,
+  expect "Z Item List. This is a catalog of the Z-items you have." and
+  the other two entries by name.
+- ~~Item Fusion and Square, through the guide app.~~ **Heard, 22:11 and
+  22:25 logs**: rows, tabs, the Explanation box on three items, the
+  plate, and the failure line. Square on the catalog is expected to
+  read the same way and has not been seen.
+- **A tab named with no row after it, on Item Fusion.** The 22:01 and
+  22:11 logs have "Fusion type" and once "Support Type" spoken alone,
+  where the same tabs read their row at other times. The row is refused
+  when it is outside the window the top counter describes. Next time it
+  happens, close the app and take `python menu_probe.py snap fusetab`
+  on that tab; the top and row for it are at `0x00B43B2C + 4 * tab` and
+  `0x00B43B1C + 4 * tab`, and one capture says which is wrong.
 - **The main menu, with the stale-marker fix in.** The precedence rule went in
   after the last session the player ran, so it has not been heard working.
   Reaching the main menu after having been inside Dragon Adventure is the case
@@ -682,6 +738,19 @@ them -- see Testing with the player.
   F12 is wired -- a key, one read, "173500 Zeni" -- and let it work
   everywhere the word is plausible, since Zeni is spent outside the shop
   too. Do not tie it to the picker's projected figure, which is not in RAM.
+- **The rest of Evolution Z.** The marker holds through the whole mode
+  and no state byte tells its screens apart, so each new one needs its
+  own drawing test, the way the Z Item list, Item Fusion and the
+  Explanation box have. Left: **the second plate and the fusion** --
+  Cross on Health +1 and then Cross again on the same row, which the
+  player owns twice, is the walk that reaches them; Cross on an item in
+  the catalog; the Explanation box on
+  the catalog (expected to be the same drawing, unmeasured), Z Item
+  Collection (the character row is its front; the loaded sprites say an
+  equipment view with seven item plates behind it), and the password
+  screen. Item Fusion's per-tab counts, if the game keeps them at all.
+  The menu's cursor is not needed: its entries are named from their
+  subtitles.
 - **The character select in Ultimate Battle Z.** Dragon Tournament turned
   out to load the same sprite at a different address, so Ultimate Battle Z
   probably does too. One `check` on that screen says where, and one line

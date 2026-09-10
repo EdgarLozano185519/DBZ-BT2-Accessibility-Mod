@@ -102,6 +102,22 @@ automatically. **NVDA is not bundled** — install it yourself if you want it.
   "times 1", "times 2" and so on as Up, Down, Left and Right move it; and
   Baba's "Hey, you don't have enough money!!" when the game refuses. The
   item names are read from the game's own text, like the fighters
+- **Evolution Z** — its menu, each entry named as you move: Z Item
+  Collection, Z Item List, Item Fusion, with the game's line for each;
+  the character row behind Z Item Collection, every fighter as you move
+  along it
+- **The Z Item List** — the catalog of every Z-item, in five category
+  tabs chosen with Left and Right: the tab is named, then each row as
+  "Health +1, 1 of 155", with items you do not own yet read as "???" the
+  way the game draws them, and the count so no two rows sound alike
+- **Z Item Fusion** — the same kind of list in four tabs, rows numbered
+  "Health +1, row 1"; X on an item you own fills the first plate, spoken
+  as "First item: Health +1", and the list keeps speaking beneath it;
+  King Kai's line when a combination is refused; Triangle empties the
+  plate. What a successful fusion does has not been seen yet
+- **The Explanation box**, Square on an item in Z Item Fusion — the
+  item's name, its Benefit, Available Location and Available Character,
+  all in the game's words; Square or Triangle closes it
 
 The character names are read from the game's own text as it draws them, so
 every fighter on the disc is covered without a list, and a badge the game
@@ -271,13 +287,16 @@ indistinguishable from "working, nothing to say":
   needs that map's scale — which is what **C** measures. Until you run C on a
   map, the trial-and-error loop above is what works there. C has been run on
   one map so far; whether it holds on every map is not yet known
-- **The story event list does not speak.** The scenario list before it now
-  does, and the difficulty screen after it does, but choosing the individual
-  event between them is still done blind
 - Dragon Library is named but its entries are not read. Ultimate Battle Z,
-  Data Center, Evolution Z and the battle menus are not recognised at all;
+  Data Center and the battle menus are not recognised at all;
   Ultimate Battle Z's character select probably needs one line to add, but
   has not been seen
+- **In Evolution Z**, a successful fusion has not been seen, so what the
+  guide says after the second item is chosen is unknown; the equipment
+  view behind a character in Z Item Collection and the password screen
+  are not read; and Z Item Fusion has no item counts, so its rows say
+  "row 5" rather than "5 of 38". Once or twice in play a tab was named
+  with no row after it there; moving once more brought the rows back
 - **In the Item Shop, prices and the Zeni you would have left are not
   spoken.** They are drawn as sprite digits and no address holding the price
   has been found. What happens after X inside the how-many picker — the sale
@@ -326,6 +345,17 @@ relevant log. Review logs before sharing; they can contain your map names and
 local paths. **Do not send game dumps, BIOS files or saves.**
 
 ## About this build
+
+**2026.09.09-r2** adds Evolution Z: its menu with every entry named, the
+character row, the Z Item List catalog across all five tabs with each row
+placed as "3 of 194", Z Item Fusion with its numbered rows and the first
+plate after X, and the Explanation box behind Square, read whole. All
+but the last are read from the game's own text through the same
+structures the shop and the event list use; the tab names are the one
+thing transcribed. Every part was heard in play the same evening,
+including King Kai refusing a bad combination. A successful fusion has
+not been seen. It also fixes the first build's silence between rows the
+game draws as "???", which is most of the catalog.
 
 **2026.09.09-r1** adds the story event list inside Dragon Adventure, the screen
 between Select Scenario and Game Level that had been silent, and has Game
