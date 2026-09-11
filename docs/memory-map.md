@@ -1870,6 +1870,112 @@ the character: "Fly south for 1308 units toward the other character", T,
 Every earlier teleport had written both sets, so this was the one open risk.
 Still unexercised on a table-less map: C, and the story marker in the cycle.
 
+## A second character on a map that has a table: Android 20 flees
+
+Observed 2026-09-10 on Blue islands, map 1 -- the eight-point table at
+`0x00E23000` -- in the Android Saga's event 05, "Doctor Gero's Lab", as
+Krillin. The player reported the story marker running away whenever they got
+close, and thought they could hear a character flying off. The evening's logs
+agree: every "T teleport: moved to the story marker" is followed within
+seconds by "Destinations changed: 2 destinations, 2 story" and a cue of a
+thousand units or so toward the marker again, dozens of times over.
+
+Read-only measurements with the guide closed:
+
+- The globals at `0x0038B130` held (1385.7, -170, 201.5) on 589 of 600 reads
+  and the player's own position on the other 11: **one other actor**, 1024
+  units from the player, hovering in place for thirty seconds.
+- The red marker sat (+40.5, -13.7) px from the minimap arrow in a 1066x705
+  capture. The other actor projects to (+43, -13) px through map 6's Jacobian
+  and (+44, -7) through map 1's, whose cross terms are larger. **The red
+  marker is the other actor.**
+- The actor-array lead at `0x014693C0` / `0x01469560` reads zero here.
+
+Then an approach test, with PCSX2's state saved to slot 8 first and reloaded
+afterwards so nothing was changed: the player's render mirrors were written to
+a chosen distance from him along the line between them, at his altitude, the
+game paused and unpaused by sending Space to its window and checking PINE's
+status each time, and his position sampled at 10 Hz:
+
+    D=800   flees within 0.1 s at ~275 units/s, stops 1313 from the player
+    D=600   flees, stops at 1110
+    D=450   flees, stops at 1026
+    D=300   flees, stops at 1032
+    D=200   flees, stops at 1027
+    D=120   flees, stops at 1029  (the world wrapped: x 4362 became -2637)
+    D=60    flees, stops at 1033
+    D=0     "Having split up from the others, Krillin unexpectedly comes
+            upon Android 20!" -- the scene, seven seconds later, no button
+
+So he keeps about a thousand units, reacts within a third of a second, and
+**the catch is smaller than 60 units and needs no Cross**. A landing derived
+from the minimap is never inside it: one pixel is about 24 units, the blob
+centroid alone is a few pixels either way, and the guide's teleport keeps the
+player's own altitude, forty units above his.
+
+**What changed, worker 2026.09.10-r1.** `Surface.other` carries the other
+actor on a table map, outside the fingerprint so his moving cannot change the
+map's identity; table-less maps keep him in `locations` as before. N and B
+offer "the other character" after the table points and before the story
+marker -- "Destination 9 of 10" on this map. T lands on his exact position,
+altitude included (`_world_landing` special-cases `OTHER_ACTOR_NAME`), read
+on the pass that performs the teleport rather than at the press. G reports
+the live position. `test_discovery.py` holds the shape, and live discovery on
+the map names him at (1383, 201) with the exact landing. **Heard through
+the guide app the same night**, once the marker fix below was in: the
+23:00 log has "toward the other character. Destination 9 of 9", "T
+teleport: moved to the other character, the destination you chose.", and
+"Having split up from the others, Krillin unexpectedly comes upon Android
+20!" straight after, with no Cross pressed.
+
+Two things seen in passing. **The world wraps in x**: a 7000-unit jump from
+4362 to -2637 while he fled 55 units per tick, so the seam is near ±3500 and
+a cue across it is wrong. And the logs' "2 story", "3 story", "4 story" fall
+exactly where he was fleeing: `MinimapInventory` keeps a confirmed marker for
+`LOST_FRAMES` after it disappears, so a marker in motion is counted at each
+place it has recently been until the old ones expire.
+
+Whether other events with a fleeing character behave the same way -- the
+thousand-unit standoff, the automatic trigger -- is one measurement each,
+by the same test, and is how this note should be extended.
+
+### A character's marker is a facing arrow, and facing south it was too wide
+
+The first build of the above went out and the player reported, within
+minutes, that T did nothing and the guidance tones were gone. Three logs in
+a row show the same shape: "Scale known." and then never "Objective: story
+objective." -- no objective, so no tones, and the T hotkey is polled below
+the objective gate, so no teleport either. N and B still cycled, and once
+reached "toward the other character. Destination 9 of 9": nine, because the
+story marker was missing from the cycle too. `menu_probe.py dryrun` from
+source reproduced it exactly, which ruled out the deploy.
+
+`analyze_frame` on a fresh capture returned `markers = ()`. The red marker
+was plainly on the minimap at (356, 514), 40 pixels of near-pure red, and
+the red mask found every one of them. **It was discarded on shape**: a
+character is drawn as an arrow showing their facing, and Android 20 facing
+south is a triangle 15 wide and 6 tall at 1066x705 -- over the 14-pixel
+edge cap (`round(18 * 0.80)`) and the 2.2 aspect cap that `_components`
+applies to the compact event squares. Earlier in the evening he had faced
+other ways and been counted, which is why "1 story" appears in those logs
+and not in these.
+
+Fixed by `_sprite_components`: the colour-specific red and yellow masks
+now allow an edge of `round(20 * scale)` and an aspect of 0.3 to 3.5; the
+broad saturation pass keeps the tight bounds, because that is the one that
+lets terrain through. On the fixture frame the arrow passes
+`is_minimap_marker`, `has_marker_outline` and `has_marker_core` unchanged
+and nothing else on the map passes at all. `test_vision.py` holds the frame
+(`reference/vision/gero_south.png`, ignored by git like every capture, so a
+fresh clone reports the suite as skipped). The dry run then says
+"Objective: story objective. 1 destination, 1 story" on the same screen.
+
+Left as it was, and worth knowing: **T is refused whenever the objective
+is unresolved**, even when the player has chosen a destination that needs
+no minimap at all. The hotkey poll sits below `if state.objective is None:
+continue`. Lifting a chosen table point or the other character above that
+gate is a real change to the loop's order and was not made tonight.
+
 ## An input held is better than an input dropped
 
 The destination keys were being read correctly -- a spy on the poll showed

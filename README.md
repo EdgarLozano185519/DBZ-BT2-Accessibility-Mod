@@ -23,372 +23,206 @@ changes your live coordinates only when its pause and validation checks pass.
 
 ## What you need
 
-- **Windows 10 or 11, 64-bit**, with .NET Framework 4.8 (already present on most
-  systems)
-- **PCSX2**, your own installation. Tested with 2.9.32; the original release
-  targeted 2.6.3
+- **Windows 10 or 11, 64-bit**, with .NET Framework 4.8 (present on most systems)
+- **PCSX2**, your own installation. Tested with 2.9.32
 - **A PS2 BIOS dump** and your own copy of the game: **SLUS-21441**, CRC
-  **FE961D28** (USA release). Other regions are not supported
-- **NVDA**, if you use it. Windows' built-in SAPI voice is the automatic
-  fallback, so the guide still speaks without it
+  **FE961D28** (USA). Other regions are not supported
+- **NVDA**, if you use it. Windows' own SAPI voice is the automatic fallback
 
-You do **not** need Python, pip, a terminal, or any runtime install. Everything
-the guide needs is inside it.
+No Python, terminal or runtime install is needed. Everything is inside the guide.
 
 ## Running it
 
-1. Extract the whole folder, keeping `worker` beside `DBZ BT2 Guide.exe`. Do not
-   run it from inside a ZIP.
+1. Extract the whole folder, keeping `worker` beside `DBZ BT2 Guide.exe`.
 2. Set up PCSX2 normally first: BIOS, controller, memory card.
-3. Open **DBZ BT2 Guide.exe**. On first run its Settings window searches for
-   your PCSX2 and your game: running instances, installed and portable copies,
-   PCSX2's own game libraries, the common game folders and your local drives.
-   Pick one only if several are found, then Save. **Browse** is there for a
-   folder it did not think of.
-4. Choose **Open game**. With PCSX2 closed, this switches on the connection the
-   guide needs (PINE) in that installation's own settings, keeping whatever
-   port it is configured for and saving a backup of your `PCSX2.ini` first.
-   Portable marker files and the `-portable` launch mode both work.
-5. Choose **Start guide**, then load or begin your own Dragon Adventure game.
+3. Open **DBZ BT2 Guide.exe**. On first run, Settings searches for your PCSX2
+   and your game; pick one if several are found, then Save. **Browse** covers
+   a folder it did not think of.
+4. Choose **Open game**. With PCSX2 closed, this switches on the PINE
+   connection in that PCSX2's own settings, after backing up its `PCSX2.ini`.
+5. Choose **Start guide**, then load or begin your Dragon Adventure game.
    **Alt+Tab** returns you to the game.
 
-You can also launch the game yourself in PCSX2 and then press Start guide; the
-Settings paths only matter for the Open game button.
-
-Guidance pauses whenever another window has focus, so you can use your screen
-reader normally without the guide talking over it.
+You can also launch the game yourself and then press Start guide. Guidance
+pauses whenever another window has focus, so your screen reader is never
+talked over.
 
 ## The guide's own window
 
-It is built from standard Windows controls, so a screen reader handles it
-normally. **Tab** and **Shift+Tab** move between controls; **Enter** or
-**Space** activates a button.
-
-- **Start guide** starts the companion. **Stop guide** silences and stops it
-  while leaving the game open. Closing the guide also stops its worker.
-- **Speak guide messages** turns the guide's own speech off if you would rather
-  read it.
-- **Latest message** and **Message history** keep what was said available to
-  read back at your own pace.
-
-Speech goes through **NVDA** when it is running, and falls back to Windows SAPI
-automatically. **NVDA is not bundled** — install it yourself if you want it.
+Standard Windows controls: **Tab** moves between them, **Enter** or **Space**
+activates. **Start guide** and **Stop guide** do what they say; closing the
+window stops the worker too. **Speak guide messages** turns its speech off if
+you would rather read it, and **Latest message** and **Message history** hold
+what was said. Speech goes through NVDA when it is running, else Windows SAPI.
+NVDA is not bundled.
 
 ## What it does today
 
-**Menus speak.** Moving the cursor announces the highlighted option on following menus:
-- the **title screen** — New Game, Load Game
-- the **main menu** — all ten options
+**Menus speak.** Moving the cursor announces the highlighted option on:
+
+- the **title screen** and the **main menu**, all ten options
 - **Options** — Save and Load, Controller, Screen, Sound, Exit
-- **Select Scenario**, the Dragon Adventure scenario list — Saiyan Saga, Tree
-  of Might, Lord Slug, Final Battle and Fateful Brothers, chosen with Up and
-  Down
-- **Story Events**, the list of a scenario's events between Select Scenario
-  and Game Level — each event as the screen writes it, "00 Mysterious Alien
-  Warrior", read from the game's own text, including when the list scrolls;
-  F12 reads the scenario's synopsis. New on 2026-09-09 and heard in play on
-  five scenarios the same day
-- **Game Level**, the difficulty chooser reached after picking a story event in
-  Dragon Adventure — it names the event on arrival, "Game Level. 06 Training
-  with King Kai", then Level 1, 2 or 3, chosen with Left and Right
-- **Character Select** in Dueling — every fighter on the grid, for both
-  players. The first move on player 2's side says "Player 2" first, so you
-  know which panel is speaking
-- **Tournament Character Select**, the Dragon Tournament entry screen — every
-  fighter on the strip
-- **The Item Shop** — Buy Z Item and Sell Z Item; then every Z-item in either
-  list as you move through it, across all four category tabs and however far
-  the list scrolls; the how-many picker after X on an item, spoken as
-  "times 1", "times 2" and so on as Up, Down, Left and Right move it; and
-  Baba's "Hey, you don't have enough money!!" when the game refuses. The
-  item names are read from the game's own text, like the fighters
-- **Evolution Z** — its menu, each entry named as you move: Z Item
-  Collection, Z Item List, Item Fusion, with the game's line for each;
-  the character row behind Z Item Collection, every fighter as you move
-  along it
-- **The Z Item List** — the catalog of every Z-item, in five category
-  tabs chosen with Left and Right: the tab is named, then each row as
-  "Health +1, 1 of 155", with items you do not own yet read as "???" the
-  way the game draws them, and the count so no two rows sound alike
-- **Z Item Fusion** — the same kind of list in four tabs, rows numbered
-  "Health +1, row 1"; X on an item you own fills the first plate, spoken
-  as "First item: Health +1", and the list keeps speaking beneath it;
-  King Kai's line when a combination is refused; Triangle empties the
-  plate. What a successful fusion does has not been seen yet
-- **The Explanation box**, Square on an item in Z Item Fusion — the
-  item's name, its Benefit, Available Location and Available Character,
-  all in the game's words; Square or Triangle closes it
+- **Select Scenario** — every scenario on the disc, by name
+- **Story Events** — each event as the screen writes it, "06 Training with
+  King Kai", including when the list scrolls; F12 reads the synopsis
+- **Game Level** — the event it is for, then Level 1, 2 or 3
+- **Character Select** in Dueling, both players, and the **Dragon Tournament**
+  entry strip — every fighter, read from the game's own text
+- **The Item Shop** — Buy and Sell, every Z-item in every tab, the how-many
+  picker after X ("times 1", "times 2"), and Baba's refusal when you cannot
+  afford it
+- **Evolution Z** — its menu, the character row, the **Z Item List** across
+  five tabs as "Health +1, 1 of 155" (unowned items read "???" as drawn),
+  **Z Item Fusion** with numbered rows and the first plate after X, King Kai's
+  refusal of a bad combination, and the **Explanation box** behind Square
 
-The character names are read from the game's own text as it draws them, so
-every fighter on the disc is covered without a list, and a badge the game
-draws after some names is left out.
-
-The scenario names are pictures on screen rather than words, but the game keeps
-its own list of them in memory, and every one on the disc ships with the guide.
-It asks the game *which* scenario each row is, so unlocking a new one reads out
-straight away and never disturbs the others.
-
-If a row ever says **"Scenario 5 of 6, name not known."**, the game has used a
-number the guide has no name for. That should not happen, so please report it
-if it does.
+Character and item names come from the text the game is drawing, so every one
+on the disc is covered without a list. Scenario names are pictures on screen,
+but the game keeps its own list of them and all of it ships with the guide,
+keyed to the game's own numbering, so a newly unlocked scenario reads at once.
 
 Screens it recognises but has not mapped are named and then stay quiet; screens
-it does not recognise say so, rather than guessing. Where the game keeps two
-copies of the cursor, both are read, and if they ever disagree it says so and
-leaves the row unnamed rather than naming the wrong option.
+it does not recognise say "Unknown screen." Where the game keeps two copies of
+a cursor, both are read; if they disagree it says so rather than name the wrong
+row. "Looking for the subtitles" or "Looking for the menu" means something has
+moved and it is searching; it carries on by itself. "Scenario 5 of 6, name not
+known" should never happen and is worth reporting.
 
-A few things you may hear it say, and what they mean:
-- **"Unknown screen."** — it does not recognise where you are, so it will not
-  guess. F12 still reads whatever is written there
-- **"Looking for the subtitles."** or **"Looking for the menu."** — the game
-  has put something somewhere new and the guide is searching for it. It takes
-  a moment and then carries on
-- **"Scenario 5 of 6, name not known."** — the game used a scenario number the
-  guide has no name for. It should not happen; everything else in the list
-  still reads correctly, and it is worth reporting
-- **"the two copies of the cursor disagree"** — the guide can see the screen
-  but not which row you are on, so it will not name one. F12 still works
+**F12 speaks the game's own text on any screen** — the character's line for a
+main menu option, the instruction on Game Level, whatever is written on a
+screen the guide was never taught. It is on a key so browsing stays quick.
 
-**F12 speaks the game's own text, on any screen.** On the main menu, the
-character's spoken line for the highlighted option. On Game Level, the
-instruction line. On a screen the guide has never been taught, whatever is
-written there. It is on a key press so that browsing stays quick. If the text
-has moved since it was last recorded, F12 says "Looking for the subtitles",
-finds it again, and carries on; where there is genuinely nothing written, it
-says so rather than staying silent.
+**The story speaks by itself.** In a cutscene each box of dialogue and
+narration is read as it appears; advance the scene as normal. Only cutscene
+text is read this way, so an unmapped menu stays quiet, and notices such as
+"MEMORY CARD slot 1" are on F12 instead. It waits for a line to settle before
+speaking, and each new line interrupts the last so you always hear the box you
+are on; say so if you would rather hear every line in full. If you ever hear a
+line that is not on screen, most likely just after a cutscene ends, please
+report it.
 
-**The story speaks by itself.** In a Dragon Adventure cutscene, each line of
-dialogue and narration is read aloud as the game puts it on screen. There is no
-key to press — advance the scene as you normally would and the guide reads each
-text box once.
-
-Only cutscene text is read this way. On a menu the guide has not been taught it
-stays quiet rather than reading out the flavour text under each option, which
-is what F12 is for. Notices like "MEMORY CARD slot 1" go with the menus: press
-F12 to hear one.
-
-This is the game's own text, taken from the pointer the game itself uses to
-draw it, so nothing has been transcribed and nothing is tied to English.
-
-Two things to know. It waits for a line to be stable before speaking, so there
-is a fractional pause before each box — that pause is deliberate and stops a
-half-drawn line being read. And each new line **interrupts** the one before, so
-that you always hear the box you are on rather than the one you have left; if
-you would rather hear every line in full even when it falls behind, say so and
-it can be changed.
-
-**If you ever hear a line that is not on screen** — most likely just after a
-cutscene ends — please report it. The guide cannot yet tell "text is being
-displayed" from "text was displayed a moment ago", and that is the one case
-that has never been captured.
-
-**Dragon Adventure navigation.** The original guidance: it picks an objective
-from the live minimap, tracks your position, and uses stereo direction and pitch
-plus spoken messages to steer you there.
-
-Because it reads the minimap off the screen, it needs the game window
-**visible and the minimap unobstructed**. Start in **windowed mode with the
-original HUD**; texture replacements and HUD modifications are untested and
-may stop it working.
-
-**G says how far, and which way to turn.** The tones are in world directions —
-stereo left and right mean west and east — which only helps if you can see
-which way you are pointing. G reads your actual heading out of the game and
-answers in your own terms: "map point 4, hard right, 1691 units."
-It answers every time it is pressed, whether or not the story objective has
-been worked out. If your position cannot be read it says so; if it can read
-your position but not your heading it gives the compass bearing and says that
-is what it is, rather than dressing a compass point up as a turn.
-
-**N and B choose the destination.** They step through what the map is offering.
-G then reports whichever you picked, and **T teleports you there** — so a place
-can be reached without flying to it. The guidance tones keep following the
-story objective, so choosing a destination changes where T goes without
-changing what the tones are steering you toward.
-
-**Once the map is calibrated, the story marker is the last item in that cycle.**
-Keep pressing N past the numbered points and you reach "the story marker";
-choose it and T goes there. Before calibration it is not offered, because until
-then it is a picture on the minimap with no known place.
-
-Teleporting still requires pausing PCSX2 by hand first: writes race the
-emulator's CPU thread otherwise. The guide says so if you press T without
-pausing, every write is read back to confirm it, and a failed write is rolled
-back.
-
-**C teaches the map its scale, so T can reach the story marker.** Confirmed in
-play on 2026-09-07. The red story marker is a picture on the minimap, not an
-entry in the map's coordinate table, so turning it into somewhere teleport can
-write needs the minimap-to-world scale. That scale is normally learned from
-flying, which is the one thing this mod cannot ask for. C learns it from
-teleporting instead.
-Press **C** on the world map. It makes six short hops and puts you back exactly
-where you started, and it tells you what to do at each step: pause PCSX2, wait
-for "Moved", unpause, and again. Press C at any point to stop; it takes you home
-before it does. The scale is saved per map, so it is a one-time cost.
-It will not start if it has nowhere safe to hop — off the edge of the map, or
-onto another destination. Standing on a destination yourself is fine: that is
-where teleporting leaves you, and the hops go around it. If it refuses it says
-which of the two got in the way, and teleporting somewhere else and pressing C
-again usually settles it.
-If it cannot tell the arrow from the map's clouds it says that too, and learns
-nothing, rather than saving a scale it is not sure of.
-
-**Reaching a story event.** On a calibrated map:
-
-1. **N** until you hear **"the story marker"** — it is the last item.
-2. **Pause PCSX2**, press **T**, then unpause. You are standing on it.
-3. Try the action button.
-
-Before C has run on a map, the story marker is not offered and the older loop
-is what works — press **N** or **B** through the numbered points, **G** to hear
-how far each is, teleport to each in turn and try the action button until one
-of them is the event. It is trial and error, and there are usually fewer than
-ten places to try.
-Both need no flying, which is the point: they exist because moving accurately
-without seeing the screen is the part that does not work.
-**It tells you when the map changes under it.** If the destinations are
-rearranged — finishing a story event does this — it says "Destinations
-changed" and describes the new set. If it has to use a map's destinations
-without being able to confirm they belong to the map you are on, it says so
-once rather than presenting a guess as a fact.
+**Dragon Adventure navigation.** The guide picks the story objective off the
+live minimap, tracks your position, and steers you with stereo tones and
+spoken messages. It needs the game window **visible in windowed mode with the
+original HUD**; texture or HUD replacements are untested.
 
 With the game focused:
 
-- **F12** — the game's own text for the current screen
-- **G** — how far the destination is and which way to turn for it
-- **N** / **B** — step through the destinations on the map. G then reports the
-  one you picked, and T teleports there
-- **T** — teleport to that destination (PCSX2 must be paused first)
+- **F12** — the game's own text for this screen
+- **N** / **B** — step through the map's destinations: the numbered points,
+  then **the other character** if one is on the map, then **the story
+  marker** once the map is calibrated
+- **G** — how far the chosen destination is and which way to turn, as a turn
+  in your own terms ("hard right, 1691 units"), or a compass bearing when your
+  heading cannot be read, and it says which
+- **T** — teleport to the chosen destination. **Pause PCSX2 first**; the guide
+  says so if you forget, reads every write back, and rolls back a failure
+- **C** — calibrate this map: six short announced hops, each one "pause, wait
+  for Moved, unpause", ending exactly where you started. Saved per map. Press
+  C again to stop; it refuses, and says why, if it has nowhere safe to hop
 - **R** — repeat the current destination
 - **L1** on a detected DualSense — same as T
 - **S**, **F**, **U** — record what a place turned out to be
 
+The tones keep following the story objective whatever you choose; choosing
+changes only where T goes.
+
+**Reaching a story event**, on a calibrated map: **N** until "the story
+marker", pause PCSX2, **T**, unpause, then the action button. Before C has run,
+the marker is not offered, so teleport to the numbered points in turn and try
+the action button at each; there are usually fewer than ten.
+
+**A character who runs from you** — Android 20 in the Android Saga — is not
+caught that way: the story marker is his picture, T lands you near him, and
+near is what makes him fly off. Choose **the other character** instead. That
+comes from the game's memory, lands you on him exactly, and the scene starts
+on its own, with no button. Confirmed in play 2026-09-10.
+
+When the destinations change under you, as finishing an event does, it says
+"Destinations changed" and describes the new set. When it must use a map's
+destinations without being able to confirm they belong to this map, it says so
+once.
+
 ## Maps and progress
 
-The atlas starts **empty** and learns maps as you visit them. A change of
-lighting alone does not create a new map.
-
-A newly discovered map is given a descriptive label and a number. Those are
-**descriptions, not the game's official names** — they are what the guide could
-tell about the place, not what it is called. To rename one: stop the guide,
-select it under **Discovered map**, type your preferred name in **Map name**,
-and choose **Save map name**. Some maps stay temporary until their identity can
-be confirmed. Learned maps are stored with your settings and logs, outside this
-folder — see *If something goes wrong*.
+The atlas starts empty and learns maps as you visit them. New maps get a
+descriptive label and a number, not the game's names; to rename one, stop the
+guide, select it under **Discovered map**, type a name and choose **Save map
+name**. Learned maps, settings and logs live in `%LOCALAPPDATA%\DBZ BT2 Guide`,
+outside this folder.
 
 ## What it cannot do yet
 
-Being honest about the limits, because silence from a screen reader is
-indistinguishable from "working, nothing to say":
+Silence from a screen reader is indistinguishable from "working, nothing to
+say", so:
 
-- **The story marker can only be teleported to on a map you have calibrated.**
-  It exists only as a marker drawn on the minimap, so turning it into a place
-  needs that map's scale — which is what **C** measures. Until you run C on a
-  map, the trial-and-error loop above is what works there. C has been run on
-  one map so far; whether it holds on every map is not yet known
-- Dragon Library is named but its entries are not read. Ultimate Battle Z,
-  Data Center and the battle menus are not recognised at all;
-  Ultimate Battle Z's character select probably needs one line to add, but
-  has not been seen
-- **In Evolution Z**, a successful fusion has not been seen, so what the
-  guide says after the second item is chosen is unknown; the equipment
-  view behind a character in Z Item Collection and the password screen
-  are not read; and Z Item Fusion has no item counts, so its rows say
-  "row 5" rather than "5 of 38". Once or twice in play a tab was named
-  with no row after it there; moving once more brought the rows back
-- **In the Item Shop, prices and the Zeni you would have left are not
-  spoken.** They are drawn as sprite digits and no address holding the price
-  has been found. What happens after X inside the how-many picker — the sale
-  itself — has not been seen, and neither have the Sell side's questions.
-  Your balance is not on a key yet; that is the next thing planned for the
-  shop
-- **The scenario descriptions are not read.** The introduction to each Dragon
-  Adventure scenario sits in the game's memory and can be found. The guide now
-  knows which scenario is highlighted, so this has become possible; what is
-  left is working out where each description begins
-- **The guide cannot tell when text stops being on screen.** It reads the
-  pointer the game uses to draw text, and that pointer keeps its last value
-  after a scene ends. Three checks make a wrong read very unlikely, but the
-  one situation that has never been captured is a battle with no text box
-  showing. If you hear a line that is not on screen, please report it
-- **Battles are not accessible** beyond the game's own audio
-- **The event name is not read on Game Level.** F12 used to announce one, and
-  it was the first event's name whatever you had picked — so it has been
-  removed. As of 2026-09-09 the event is named again, correctly, from the
-  text the screen draws at the top, and on the Story Events list before it
-- If the guide cannot find any text, F12 says so rather than reading nonsense
-- Navigation is a playtest of Dragon Adventure, not whole-game accessibility.
-  Unfamiliar maps still need wider testing
-- An **ambiguous objective may stay unconfirmed**. The guide says so rather than
-  inventing a route
-- This build has **not been tested on a separate, clean Windows machine**
+- **The story marker is a destination only on a calibrated map.** C has been
+  run on one map; whether it holds everywhere is not yet known
+- **T is refused while the objective is unresolved**, even with a destination
+  chosen from memory. If the tones go quiet, T goes with them
+- **Several characters on one map**: the guide offers whichever one the game
+  handled last and cannot yet say which
+- **Dragon Library**'s entries, **Ultimate Battle Z**, **Data Center** and
+  the battle menus are not read. Battles are not accessible beyond the game's
+  own audio
+- **Evolution Z**: a successful fusion has not been seen; Z Item Collection's
+  equipment view and the password screen are not read; Fusion rows say
+  "row 5" rather than "5 of 38"
+- **Item Shop**: prices, the Zeni you would have left and your balance are
+  not spoken; the sale itself after the picker, and the Sell side's
+  questions, have not been seen
+- **Scenario descriptions** are not read
+- **The guide cannot tell when text stops being on screen**; three checks
+  make a wrong read unlikely, and a line heard with nothing on screen is
+  worth reporting
+- An ambiguous objective may stay unconfirmed; it says so rather than guess
+- Not yet tested on a separate, clean Windows machine
 
 ## If something goes wrong
 
-- **Waiting for a connection** — close PCSX2 normally, confirm the right copy is
-  chosen in Settings, then choose Open game so the guide can switch PINE on
-- **Silent** — return focus to the game, check *Speak guide messages*, and read
-  the Message history
-- **The runtime is missing** — extract the whole package again, with its `worker`
-  folder
-- **The worker stopped** — the window keeps the error available; choose Start
-  guide to retry. Runtime errors are retried without closing the guide, and an
-  unrecoverable startup error is written to `logs\last-worker-error.txt`
+- **Waiting for a connection** — close PCSX2 normally, confirm the right copy
+  in Settings, then Open game so the guide can switch PINE on
+- **Silent** — return focus to the game, check *Speak guide messages*, and
+  read the Message history
+- **The runtime is missing** — extract the whole package again, with `worker`
+- **The worker stopped** — the window keeps the error; Start guide retries.
+  An unrecoverable startup error is written to `logs\last-worker-error.txt`
 
-Settings, logs and learned maps live in `%LOCALAPPDATA%\DBZ BT2 Guide`, kept
-separate from this extracted folder and from PCSX2's own saves.
-
-When reporting a problem, include the release version, your PCSX2 version, the
-map or chapter you were on, what you did and what you expected, and the
-relevant log. Review logs before sharing; they can contain your map names and
-local paths. **Do not send game dumps, BIOS files or saves.**
+Every session leaves a transcript in `%LOCALAPPDATA%\DBZ BT2 Guide\logs`.
+When reporting a problem, include the release version, your PCSX2 version,
+where you were, what you did and expected, and that log; it may contain your
+map names and local paths. **Do not send game dumps, BIOS files or saves.**
 
 ## About this build
 
-**2026.09.09-r2** adds Evolution Z: its menu with every entry named, the
-character row, the Z Item List catalog across all five tabs with each row
-placed as "3 of 194", Z Item Fusion with its numbered rows and the first
-plate after X, and the Explanation box behind Square, read whole. All
-but the last are read from the game's own text through the same
-structures the shop and the event list use; the tab names are the one
-thing transcribed. Every part was heard in play the same evening,
-including King Kai refusing a bad combination. A successful fusion has
-not been seen. It also fixes the first build's silence between rows the
-game draws as "???", which is most of the catalog.
+**2026.09.10-r1** offers **the other character** as a destination on every
+world map, not only on maps with no destination table, and fixes the marker
+finder rejecting a character's arrow-shaped marker when it points sideways,
+which had silenced the tones and T. Built for the Android Saga's "Doctor
+Gero's Lab", where Android 20 flees whenever you come within about a thousand
+units; landing on his exact position starts the scene by itself. Both parts
+heard in play the same night.
 
-**2026.09.09-r1** adds the story event list inside Dragon Adventure, the screen
-between Select Scenario and Game Level that had been silent, and has Game
-Level name the event it is for. Nothing on either screen was transcribed:
-the rows are read from the text the game draws, with the highlighted one
-picked out by the colour the game paints it and cross-checked against the
-game's own row counter. It took three rounds in play to get right -- a
-counter kept once per scenario, a leftover heading hidden off the left edge
-of the screen, and a two-line event name -- and every scenario tried since
-has read. It also stops the guide saying "Select Scenario" and "Saiyan Saga"
-over the event list, and retires a second copy of Game Level's cursor that
-turned out not to be one and had been silencing the level on a first visit.
+**2026.09.09-r2** adds Evolution Z: the menu, the character row, the Z Item
+List across five tabs with each row placed as "3 of 194", Z Item Fusion with
+its first plate, and the Explanation box. All heard in play the same evening.
 
-**2026.09.08-r5** adds the Item Shop: the Buy/Sell menu, both item lists,
-the how-many picker and the refusal, all heard in play the same night except
-the picker, which was mapped from captures at the controls and has been heard
-through the reader offline. It also stops the guide saying "Select Scenario"
-over the shop, which a marker left behind by Dragon Adventure had caused.
-Releases r2 through r4 the same day were intermediate: r2 added maps with no
-destination table, and r3 and r4 were never handed out.
+**2026.09.09-r1** adds the story event list and has Game Level name the event
+it is for, both from the text the game draws. It also stops "Select Scenario"
+being announced over the event list.
 
-**2026.09.08-r1** added the two character selects above, and closed a fault
-that had the guide say "New Game" over screens that were not the title: the
-title screen's marker is now refused while the game is drawing text.
+**2026.09.08-r5** adds the Item Shop, heard in play the same night, and stops
+"Select Scenario" being announced over the shop. r2 the same day added maps
+with no destination table; r3 and r4 were never handed out.
 
-Since r1 the releases omit the 44 `api-ms-win-*.dll` compatibility stubs that release
-2026.09.05-r4 carried. They forward to the Universal C Runtime, which ships
-inside Windows 10 and 11 — and Windows 10/11 x64 is what this guide requires —
-so nothing a supported system needs was lost.
+**2026.09.08-r1** added the two character selects and stopped "New Game"
+being announced over screens that were not the title.
 
-The `source` folder holds this guide's runtime and interface source, for
-inspection. Third-party notices and versions are in `THIRD-PARTY.txt` and the
-`licenses` folder.
+Releases since r1 omit the 44 `api-ms-win-*.dll` stubs that 2026.09.05-r4
+carried; they forward to a runtime that ships inside Windows 10 and 11.
+
+The `source` folder holds the runtime and interface source. Third-party
+notices and versions are in `THIRD-PARTY.txt` and the `licenses` folder.
 
 ## Useful links
 

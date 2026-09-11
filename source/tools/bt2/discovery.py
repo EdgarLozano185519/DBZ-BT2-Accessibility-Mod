@@ -208,6 +208,15 @@ def discover_world_map(
     now = time.monotonic()
     if mirror_set.other is not None:
         scanner.note_other(mirror_set.other, now)
+    # A second character is offered on every world map, table or not.  On a
+    # table map it is the one destination whose position is exact: Android 20
+    # (Android Saga, "Doctor Gero's Lab", 2026-09-10) flees from anything
+    # nearer than about a thousand units and is caught only by landing on
+    # him to the unit, which a minimap conversion never manages.
+    remembered = scanner.other(now)
+    companion = (
+        other_actor_location(remembered) if remembered is not None else None
+    )
 
     tiers = (
         scanner.targeted_windows(),
@@ -268,6 +277,7 @@ def discover_world_map(
                 player_address=mirror_set.authoritative,
                 locations=locations,
                 mirrors=mirror_set.all_addresses,
+                other=companion,
             )
 
     scanner.invalidate()
@@ -296,6 +306,7 @@ def discover_world_map(
                 locations=locations,
                 mirrors=mirror_set.all_addresses,
                 liveness_confirmed=False,
+                other=companion,
             )
 
     if undecided:

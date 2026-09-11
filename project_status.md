@@ -4,7 +4,7 @@ Screen reader support for Dragon Ball Z: Budokai Tenkaichi 2, played in PCSX2.
 Read this first when resuming. Details of every address live in
 `docs/memory-map.md`.
 
-Last updated: 2026-09-09, late, released as 2026.09.09-r2.
+Last updated: 2026-09-10, late, released as 2026.09.10-r1.
 
 ## What works today
 
@@ -157,6 +157,33 @@ Menus speak through NVDA, driven by the game's own memory:
   **Confirmed in play 2026-09-08**: N gave "toward the other character.
   Destination 1 of 1", T moved the player there, and Cross started the story
   event. See item 7.
+- **A second character is a destination on every world map**, not only on
+  table-less ones, in the unreleased 2026.09.10-r1 worker. Found on the
+  Android Saga's "Doctor Gero's Lab" on 2026-09-10: Android 20 stands on the
+  red marker and flies off at about 275 units a second whenever the player
+  comes within a thousand units, so every teleport to the minimap-derived
+  marker left him a thousand units away again -- the "character running
+  away" the player reported. Landing on his exact memory position starts the
+  scene by itself, with no Cross: measured by an approach test on a saved
+  state, 60 units still fled and 0 caught. N and B now offer "the other
+  character" after the table points and before the story marker, and T lands
+  on the exact position, altitude included, read fresh at teleport time.
+  **Heard in play the same night**: the 23:00 log has "toward the other
+  character. Destination 9 of 9", "T teleport: moved to the other
+  character", and Krillin's scene straight after, with no Cross pressed.
+  Released as 2026.09.10-r1. See *A second character on a map that has a
+  table* in `docs/memory-map.md`.
+- **A character's red marker is a facing arrow, and it is now found
+  whichever way it points.** The first 2026.09.10-r1 build went silent
+  within minutes: no objective, no tones, T refused, three logs over. The
+  marker finder capped a marker at 14 pixels on an edge and 2.2 in aspect,
+  which suits the event squares, and Android 20 facing south is a red
+  triangle 15 by 6. The colour-specific masks now allow 16 and 3.5; the
+  broad pass is unchanged. Reproduced and then cleared with `menu_probe.py
+  dryrun` on the player's own screen. `test_vision.py` is new and holds the
+  frame. **The T gate is untouched**: T is still refused while the objective
+  is unresolved, even with a destination chosen from memory -- see the end
+  of that section in `docs/memory-map.md`.
 - **The player's position comes from the render block when the globals
   disagree with it.** Same release. Two characters on a map put the
   simulation globals 1390 units from the player; a forward nudge, watched
@@ -327,6 +354,7 @@ first thing to run after changing any of this:
     ..\..\.venv\Scripts\python.exe test_menus.py    # 223 checks, 27 captures
     ..\..\.venv\Scripts\python.exe test_story.py    # 44 checks
     ..\..\.venv\Scripts\python.exe test_mapcal.py   # 30 checks
+    ..\..\.venv\Scripts\python.exe test_vision.py   # 2 checks, needs reference/vision captures
 
 **From source, for development**, from `source/tools`:
 
@@ -460,7 +488,10 @@ above has incidentally made this much stricter: a stale pointer left aiming at
 menu text after a scene ends is now refused by address as well as by content.
 The remaining exposure is a stale pointer still inside the scene buffer.
 
-**4. ~~Should this be stamped as a release?~~** Done four times: 2026.09.08-r1,
+**4. ~~Should this be stamped as a release?~~** Done five times, the fifth
+being 2026.09.10-r1 with the other character on every map and the arrow-shaped
+marker fix, stamped at the end of the session it was built in. Before that,
+four: 2026.09.08-r1,
 2026.09.08-r5 with the whole Item Shop at the end of that day,
 2026.09.09-r1 with the story event list, and 2026.09.09-r2 with all of
 Evolution Z that an evening reached, each tagged
@@ -658,6 +689,12 @@ them -- see Testing with the player.
 
 - ~~Final Battle's event list, through the guide app.~~ **Heard, 12:41 log,
   all three rows**, fixed on Lord Slug's evidence and never captured itself.
+- ~~The other character on a table map, through the guide app.~~ **Heard,
+  23:00 log, 2026-09-10**: "moved to the other character" and Krillin's
+  scene straight after. The cycle said "9 of 9" there, not "9 of 10",
+  because the story marker was not offered in that pass: it and the
+  character are the same red arrow, and the objective had only just
+  resolved. Harmless, and worth knowing when reading logs.
 - **Game Level through the guide app since the mirror was retired.** Cross
   on any event: expect "Game Level. 00 ..." then "Level 2", and Left and
   Right to move it. The cursor was verified live by a spoken test, so this

@@ -23,6 +23,7 @@ from .memory import (
     LOCAL_TELEPORT_STANDOFF,
     Location,
     MapNotReady,
+    OTHER_ACTOR_NAME,
     PLAYER_RENDER_CANDIDATES,
     PLAYER_SIMULATION_CANDIDATES,
     discover_world_mirrors,
@@ -54,7 +55,13 @@ def _world_landing(
     teleport still leaves the player at the height they were flying at.  It is
     corrected only far enough to clear the margin, and always toward the point
     from whichever side the player is on.
+
+    A character is the exception: the landing is their exact position, height
+    included.  Measured 2026-09-10 on Android 20, who fled from 60 units and
+    every greater distance tried, and whose scene began at 0.
     """
+    if target.name == OTHER_ACTOR_NAME:
+        return (target.x, target.y, target.z)
     vertical = player[1] - target.y
     limit = target.radius * WORLD_TELEPORT_DEPTH_FRACTION
     if abs(vertical) <= limit:

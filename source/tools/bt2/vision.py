@@ -210,6 +210,27 @@ def _marker_components(pixels, mask, scale) -> list[Blob]:
     )
 
 
+# A character on the map is drawn as a facing arrow, not a dot.  Android 20
+# pointing south on Blue islands (2026-09-10, 1066x705) was a red triangle 15
+# wide and 6 tall, over the 14-pixel edge cap and the 2.2 aspect cap that
+# suit the compact event squares, so the frame held no marker, the objective
+# never resolved, the tones stayed silent and T was refused.  Colour-specific
+# masks admit near-pure primaries only, which terrain never is, so a looser
+# shape there costs nothing; the broad saturation pass keeps the tight one.
+SPRITE_ASPECT = (0.3, 3.5)
+
+
+def _sprite_components(pixels, mask, scale) -> list[Blob]:
+    return _components(
+        mask,
+        pixels,
+        minimum_edge=max(2, round(3 * scale)),
+        maximum_edge=max(8, round(20 * scale)),
+        minimum_pixels=max(4, round(6 * scale * scale)),
+        aspect=SPRITE_ASPECT,
+    )
+
+
 def find_map_markers(
     image,
     region: tuple[int, int, int, int] | None = None,
@@ -254,8 +275,8 @@ def find_map_markers(
     red_mask = (red >= 110) & ((red - green) >= 90) & ((red - blue) >= 90)
     yellow_mask = (red >= 140) & (green >= 140) & (blue <= 90)
 
-    blobs = _marker_components(pixels, red_mask, scale)
-    blobs += _marker_components(pixels, yellow_mask, scale)
+    blobs = _sprite_components(pixels, red_mask, scale)
+    blobs += _sprite_components(pixels, yellow_mask, scale)
 
     if not blobs or region is not None:
         # Inside the minimap ROI it is safe to include the broad pass even when

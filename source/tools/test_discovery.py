@@ -257,6 +257,51 @@ def test_a_slotted_live_table_ignores_the_minimap_rule():
     assert surface.has_table
     assert surface.table_address == SLOTTED_TABLE
     assert len(surface.locations) == 8
+    assert surface.other is None
+
+
+EARTH_POINTS = BLUE_ISLANDS + ((300.0, -1872.0, 280.0), (1450.0, -1221.0, 280.0))
+
+
+@check
+def test_a_table_map_still_offers_the_other_character():
+    """Android 20 on Blue islands, 2026-09-10: a table map with a second actor.
+
+    The globals held him 1024 units from the player while the render block
+    held the player, exactly as on Namek -- but this map has a table, and the
+    character used to be offered only where there was none.
+    """
+    pine = FakePine().mirrors(OTHER, PLAYER).plant_table(
+        SLOTTED_TABLE, EARTH_POINTS, slot=PLAYER
+    )
+    surface = discovery.discover_world_map(pine, TableScanner(), trust_slotless=False)
+    assert surface.has_table
+    assert len(surface.locations) == 8
+    assert surface.other is not None
+    assert surface.other.label == mem.OTHER_ACTOR_NAME
+    assert (surface.other.x, surface.other.z) == (OTHER[0], OTHER[2])
+    # The character is not a table entry, so the map's identity is the same
+    # with him and without him.
+    alone = FakePine().mirrors(PLAYER, PLAYER).plant_table(
+        SLOTTED_TABLE, EARTH_POINTS, slot=PLAYER
+    )
+    unaccompanied = discovery.discover_world_map(
+        alone, TableScanner(), trust_slotless=False
+    )
+    assert unaccompanied.other is None
+    assert unaccompanied.identity == surface.identity
+
+
+@check
+def test_landing_on_the_other_character_is_exact():
+    """Android 20 fled from 60 units and was caught at 0; no depth, no margin."""
+    from bt2.teleport import _world_landing
+
+    target = mem.other_actor_location(OTHER)
+    assert _world_landing(PLAYER, target) == (OTHER[0], OTHER[1], OTHER[2])
+    # An ordinary destination still keeps the player's own altitude.
+    point = mem.Location(0, 0, 100.0, 0.0, 200.0, 400.0)
+    assert _world_landing(PLAYER, point) == (100.0, PLAYER[1], 200.0)
 
 
 def main() -> int:

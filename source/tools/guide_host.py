@@ -10,7 +10,7 @@ import traceback
 
 from bt2.profiles import default_store
 
-WORKER_VERSION = "2026.09.09-r2"
+WORKER_VERSION = "2026.09.10-r1"
 
 
 def request(payload):

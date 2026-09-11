@@ -57,6 +57,7 @@ from .atlas import MapLabeler
 from .mapcal import MapCalibration, calibration_target
 from .markers import DEFAULT_MARKER_RADIUS, MarkerLocation, MinimapInventory
 from .navigation import (
+    KIND_CHARACTER,
     UNIT_NAME,
     cardinal,
     cue_for,
@@ -147,6 +148,10 @@ class GuideState:
     # on the minimap, converted through the learned scale every time it is
     # needed rather than frozen at the moment it was chosen.
     story_selected: bool = False
+    # True when the pick is the other character on the map. Like the story
+    # marker it is looked up fresh whenever it is needed, because a character
+    # moves; unlike the marker it needs no scale, since memory holds it.
+    other_selected: bool = False
     # True once the player has picked a destination with N or B. Distinct from
     # selected_index, which the guide sets for itself when it needs somewhere
     # to start from: only this means "the player chose this".
@@ -209,6 +214,7 @@ class GuideState:
         # A destination chosen on the previous map means nothing on this one.
         self.destination_chosen = False
         self.story_selected = False
+        self.other_selected = False
         self.chosen_location = None
         self.chosen_name = None
         self.active_identity = None
@@ -357,6 +363,9 @@ class Guide:
         no explicit pick, the thing the guide is steering to is the answer.
         """
         state = self.state
+        if state.other_selected and observed.other is not None:
+            # Fresh each time: a character moves, a table entry does not.
+            return observed.other
         if (
             state.destination_chosen
             and not state.story_selected
@@ -925,6 +934,7 @@ f"Back from {label}. S story, F free, U nothing?"
             # teleporting cannot land somewhere else or call it something else.
             self.state.chosen_location = entry.location
             self.state.chosen_name = name
+            self.state.other_selected = False
             cue = cue_for(player, entry.location, name, entry.kind)
             self._reset_approach()
             self.speaker.say(
@@ -956,20 +966,40 @@ f"Back from {label}. S story, F free, U nothing?"
             return
 
         points = len(surface.locations)
-        total = points + (1 if story is not None else 0)
+        # A second character read from memory sits between the table and the
+        # story marker.  Unlike the marker it needs no scale: its position is
+        # the game's own, exact to the unit, which is what catching Android 20
+        # took on 2026-09-10.  He flees from anything nearer than about a
+        # thousand units, and his scene starts only when the player lands on
+        # him exactly; a minimap conversion is never that exact.  Table-less
+        # maps carry the character in the table's place and need nothing here.
+        other = surface.other if surface.has_table else None
+        other_slot = points if other is not None else None
+        story_slot = (
+            points + (1 if other is not None else 0) if story is not None else None
+        )
+        total = (
+            points
+            + (1 if other is not None else 0)
+            + (1 if story is not None else 0)
+        )
         if self.state.story_selected and story is not None:
-            position = points
+            position = story_slot
+        elif self.state.other_selected and other is not None:
+            position = other_slot
         else:
             selected = self.selected_location(surface, player)
-            # With no table points the only entry is the story marker, and a
-            # first press must land on it from either direction.
+            # With no table points the only entries are the character and the
+            # story marker, and a first press must land on one from either
+            # direction.
             position = selected.index if selected is not None else points - 1
         if action == "next":
             position = (position + 1) % total
         elif action == "previous":
             position = (position - 1) % total
-        if story is not None and position == points:
+        if story is not None and position == story_slot:
             self.state.story_selected = True
+            self.state.other_selected = False
             self.state.destination_chosen = True
             self.state.selected_index = None
             self.state.chosen_location = story
@@ -979,7 +1009,21 @@ f"Back from {label}. S story, F free, U nothing?"
             # The cue already names it, so the count does not repeat the name.
             self.speaker.say(f"{cue.instruction} {total} of {total}.")
             return
+        if other is not None and position == other_slot:
+            self.state.other_selected = True
+            self.state.story_selected = False
+            self.state.destination_chosen = True
+            self.state.selected_index = None
+            self.state.chosen_location = other
+            self.state.chosen_name = other.label
+            cue = cue_for(player, other, other.label, KIND_CHARACTER)
+            self._reset_approach()
+            self.speaker.say(
+                f"{cue.instruction} Destination {position + 1} of {total}."
+            )
+            return
         self.state.story_selected = False
+        self.state.other_selected = False
         self.state.selected_index = position
         chosen = self.selected_location(surface, player)
         profile = (MapProfile(surface.fingerprint) if surface.is_local else
@@ -2032,6 +2076,10 @@ f"{observed.display_name} calibrated."
                     # a destination changes where T goes without changing what
                     # is being flown toward.
                     picked = state.chosen_location
+                    if state.other_selected and observed.other is not None:
+                        # The character's position as of this pass, not as of
+                        # the press: one who flees is caught only exactly.
+                        picked = observed.other
                     if picked is not None:
                         target = picked
 

@@ -37,6 +37,13 @@ class Surface:
     liveness_confirmed: bool = True
     descriptor: tuple[int, ...] = ()
     label_key: str | None = None
+    # A second character on a world map that has a table, read from memory
+    # rather than from the minimap.  Kept apart from ``locations`` because a
+    # character moves and the table does not: it takes no part in the
+    # fingerprint, so a character walking about cannot change the map's
+    # identity.  Table-less maps carry the same character in ``locations``
+    # instead, as they did before this field existed.
+    other: Location | None = None
 
     @property
     def is_local(self) -> bool:
@@ -94,6 +101,7 @@ def world_surface(
     locations: tuple[Location, ...],
     mirrors: tuple[int, ...] = (),
     liveness_confirmed: bool = True,
+    other: Location | None = None,
 ) -> Surface:
     return Surface(
         kind=WORLD,
@@ -103,6 +111,7 @@ def world_surface(
         fingerprint=fingerprint_locations(locations),
         mirrors=mirrors,
         liveness_confirmed=liveness_confirmed,
+        other=other,
     )
 
 
